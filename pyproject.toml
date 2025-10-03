@@ -1,8 +1,33 @@
 [project]
 name = "budget"
 version = "0.1.0"
-description = "Add your description here"
+description = "Personal Budget Tracker - A command-line application for tracking daily transactions, account balances, spending limits, and financial analytics"
 requires-python = ">=3.13"
 dependencies = [
     "typer>=0.17.4",
+    "rich>=13.7.1",
+    "textual>=0.82.0",
+    "sqlalchemy>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+]
+
+[project.scripts]
+budget = "budget.budget_cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--cov=budget",
+    "--cov-report=term-missing",
+    "--cov-report=html",
 ]
