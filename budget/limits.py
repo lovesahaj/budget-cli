@@ -1,3 +1,9 @@
+"""Spending limit management module.
+
+This module provides functionality for setting, retrieving, and checking
+spending limits across different time periods, categories, and payment sources.
+"""
+
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
@@ -7,7 +13,30 @@ from budget.exceptions import DatabaseError, ValidationError
 from budget.models import SpendingLimit, Transaction
 
 class LimitManager:
+    """Manages spending limits and monitors spending against those limits.
+
+    The LimitManager handles operations related to spending limits, including
+    setting limits for different periods/categories/sources and checking
+    current spending against those limits.
+
+    Attributes:
+        session (Session): SQLAlchemy database session.
+
+    Example:
+        >>> with BudgetManager() as bm:
+        ...     limit_mgr = LimitManager(bm.session)
+        ...     # Set a monthly food budget
+        ...     limit_mgr.set_spending_limit(500.0, "monthly", category="Food")
+        ...     # Check current spending
+        ...     status = limit_mgr.check_spending_limit(category="Food")
+    """
+
     def __init__(self, session: Session):
+        """Initialize the LimitManager.
+
+        Args:
+            session: SQLAlchemy database session for database operations.
+        """
         self.session = session
 
     def set_spending_limit(
@@ -17,7 +46,34 @@ class LimitManager:
         category: Optional[str] = None,
         source: Optional[str] = None,
     ) -> bool:
-        """Set a spending limit for a category, source, or overall"""
+        """Set or update a spending limit.
+
+        Creates a new spending limit or updates an existing one. Limits can be
+        set for specific categories, payment sources, time periods, or any
+        combination thereof.
+
+        Args:
+            limit_amount: Maximum spending amount (must be positive).
+            period: Time period - "daily", "weekly", "monthly", or "yearly".
+                   Defaults to "monthly".
+            category: Optional category to limit (None = all categories).
+            source: Optional payment source to limit (None = all sources).
+
+        Returns:
+            bool: True if the limit was set successfully.
+
+        Raises:
+            ValidationError: If limit_amount is not positive or period is invalid.
+            DatabaseError: If setting the limit fails.
+
+        Example:
+            >>> # Monthly food budget
+            >>> limit_mgr.set_spending_limit(500.0, "monthly", category="Food")
+            >>> # Weekly limit for a specific card
+            >>> limit_mgr.set_spending_limit(200.0, "weekly", source="Visa")
+            >>> # Daily overall spending limit
+            >>> limit_mgr.set_spending_limit(50.0, "daily")
+        """
         try:
             if limit_amount <= 0:
                 raise ValidationError("Limit amount must be positive")
@@ -50,7 +106,20 @@ class LimitManager:
             raise DatabaseError(f"Failed to set spending limit: {e}")
 
     def get_spending_limits(self) -> List[SpendingLimit]:
-        """Get all spending limits"""
+        """Get all configured spending limits.
+
+        Returns:
+            List[SpendingLimit]: List of all spending limit records, sorted by
+                                period, category, and source.
+
+        Raises:
+            DatabaseError: If retrieving limits fails.
+
+        Example:
+            >>> limits = limit_mgr.get_spending_limits()
+            >>> for limit in limits:
+            ...     print(f"{limit.period} {limit.category}: ${limit.limit_amount}")
+        """
         try:
             return self.session.query(SpendingLimit).order_by(SpendingLimit.period, SpendingLimit.category, SpendingLimit.source).all()
         except Exception as e:
@@ -62,7 +131,38 @@ class LimitManager:
         source: Optional[str] = None,
         period: str = "monthly",
     ) -> Optional[Dict]:
-        """Check if spending limit is exceeded"""
+        """Check current spending against a configured limit.
+
+        Calculates the current spending for the specified period and compares
+        it against the configured limit. Returns detailed information about
+        the limit status.
+
+        Args:
+            category: Category to check (None = all categories).
+            source: Payment source to check (None = all sources).
+            period: Time period - "daily", "weekly", "monthly", or "yearly".
+                   Defaults to "monthly".
+
+        Returns:
+            Optional[Dict]: Dictionary with limit information if a limit is
+                           configured, None if no limit exists. The dictionary
+                           contains:
+                           - limit (float): The configured limit amount
+                           - spent (float): Current spending in the period
+                           - remaining (float): Amount remaining before limit
+                           - percentage (float): Percentage of limit used
+                           - exceeded (bool): Whether the limit is exceeded
+
+        Raises:
+            DatabaseError: If checking the limit fails.
+
+        Example:
+            >>> status = limit_mgr.check_spending_limit(category="Food")
+            >>> if status and status['exceeded']:
+            ...     print(f"Over budget by ${-status['remaining']:.2f}")
+            >>> elif status:
+            ...     print(f"{status['percentage']:.1f}% of budget used")
+        """
         try:
             limit = self.session.query(SpendingLimit).filter_by(
                 category=category, source=source, period=period

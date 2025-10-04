@@ -1,3 +1,10 @@
+"""Core budget management module.
+
+This module provides the main BudgetManager class, which serves as the
+primary facade for all budget operations. It coordinates all specialized
+managers and handles database session management via context manager protocol.
+"""
+
 import os
 from typing import Dict, List, Optional, Tuple
 
@@ -12,37 +19,85 @@ from budget.transactions import TransactionManager
 
 
 class BudgetManager:
-    """Manages budget tracking with support for transactions, categories, and spending limits"""
+    """Main facade for budget tracking operations.
+
+    BudgetManager is the primary entry point for all budget operations. It
+    implements the Facade pattern, providing a unified interface to all
+    subsystems (transactions, cards, categories, balances, limits, reports,
+    and exports). It also implements the Context Manager protocol for proper
+    database session management.
+
+    The manager should be used as a context manager to ensure proper database
+    session handling with automatic commit/rollback.
+
+    Attributes:
+        db_name (str): Name of the database file.
+        engine: SQLAlchemy engine instance.
+        cards (List[str]): List of available card names.
+        categories (List[str]): List of available category names.
+        transactions (TransactionManager): Transaction operations manager.
+        card_manager (CardManager): Card operations manager.
+        categories_manager (CategoryManager): Category operations manager.
+        balances_manager (BalanceManager): Balance operations manager.
+        limits_manager (LimitManager): Spending limit operations manager.
+        reports_manager (ReportManager): Reporting and analytics manager.
+        export_manager (ExportManager): Data export manager.
+
+    Example:
+        >>> # Using as context manager (recommended)
+        >>> with BudgetManager() as bm:
+        ...     bm.add_transaction("card", "Visa", "Coffee", 5.0, "Food")
+        ...     recent = bm.get_recent_transactions(10)
+        ...     balances = bm.get_all_balances()
+        ...
+        >>> # Custom database name
+        >>> with BudgetManager("my_budget.db") as bm:
+        ...     bm.add_category("Entertainment", "Movies, games, etc")
+    """
 
     def __init__(self, db_name: str = "budget.db"):
+        """Initialize the BudgetManager.
+
+        Args:
+            db_name: Name of the SQLite database file. Defaults to "budget.db".
+                    Can be overridden by BUDGET_DB_NAME environment variable.
+        """
         self.db_name = os.environ.get("BUDGET_DB_NAME", db_name)
         self.engine = database.get_engine(self.db_name)
         database.init_db(self.engine)
         self.cards = []
         self.categories = []
-        self.transactions = None
-        self.card_manager = None
-        self.categories_manager = None
-        self.balances_manager = None
-        self.limits_manager = None
-        self.reports_manager = None
-        self.export_manager = None
+        self.transactions: Optional[TransactionManager] = None
+        self.card_manager: Optional[CardManager] = None
+        self.categories_manager: Optional[CategoryManager] = None
+        self.balances_manager: Optional[BalanceManager] = None
+        self.limits_manager: Optional[LimitManager] = None
+        self.reports_manager: Optional[ReportManager] = None
+        self.export_manager: Optional[ExportManager] = None
 
     def load_cards(self):
-        """Load cards from database and ensure default setup"""
-        self.cards = self.card_manager.load_cards()
+        """Load cards from database and ensure default setup.
+
+        Delegates to the CardManager to load all payment cards from the
+        database and initialize default cards if none exist.
+        """
+        if self.card_manager is not None:
+            self.cards = self.card_manager.load_cards()
 
     def get_daily_spending(self, days: int = 30) -> List[Tuple[str, float]]:
         """Return list of (YYYY-MM-DD, total_spent) for the last `days` days"""
+        assert self.reports_manager is not None
         return self.reports_manager.get_daily_spending(days)
 
     def get_all_balances(self) -> Dict[str, float]:
         """Return mapping of balance type to current amount"""
+        assert self.balances_manager is not None
         return self.balances_manager.get_all_balances()
 
     # Card management delegation
     def add_new_card(self, name: str) -> bool:
         """Add a new payment card"""
+        assert self.card_manager is not None
         result = self.card_manager.add_new_card(name)
         if result:
             self.cards = self.card_manager.cards
@@ -51,6 +106,7 @@ class BudgetManager:
     # Category management delegation
     def add_category(self, name: str, description: str = "") -> bool:
         """Add a new transaction category"""
+        assert self.categories_manager is not None
         result = self.categories_manager.add_category(name, description)
         if result:
             self.categories = self.categories_manager.categories
@@ -58,15 +114,18 @@ class BudgetManager:
 
     def get_categories(self):
         """Get all categories with descriptions"""
+        assert self.categories_manager is not None
         return self.categories_manager.get_categories()
 
     # Balance management delegation
     def get_balance(self, balance_type: str) -> float:
         """Get current balance for a given type"""
+        assert self.balances_manager is not None
         return self.balances_manager.get_balance(balance_type)
 
     def update_balance(self, balance_type: str, amount: float):
         """Update balance for a given type"""
+        assert self.balances_manager is not None
         return self.balances_manager.update_balance(balance_type, amount)
 
     # Transaction management delegation
@@ -79,6 +138,7 @@ class BudgetManager:
         category: Optional[str] = None,
     ):
         """Add a new transaction"""
+        assert self.transactions is not None
         return self.transactions.add_transaction(
             t_type, card, description, amount, category
         )
@@ -93,20 +153,24 @@ class BudgetManager:
         category: Optional[str] = None,
     ) -> bool:
         """Update an existing transaction"""
+        assert self.transactions is not None
         return self.transactions.update_transaction(
             transaction_id, t_type, card, description, amount, category
         )
 
     def delete_transaction(self, transaction_id: int) -> bool:
         """Delete a transaction by ID"""
+        assert self.transactions is not None
         return self.transactions.delete_transaction(transaction_id)
 
     def get_transaction_by_id(self, transaction_id: int):
         """Get a single transaction by ID"""
+        assert self.transactions is not None
         return self.transactions.get_transaction_by_id(transaction_id)
 
     def get_recent_transactions(self, limit: int = 10):
         """Get recent transactions"""
+        assert self.transactions is not None
         return self.transactions.get_recent_transactions(limit)
 
     def search_transactions(
@@ -120,6 +184,7 @@ class BudgetManager:
         max_amount: Optional[float] = None,
     ):
         """Search and filter transactions"""
+        assert self.transactions is not None
         return self.transactions.search_transactions(
             query, category, card, start_date, end_date, min_amount, max_amount
         )
@@ -127,10 +192,12 @@ class BudgetManager:
     # Reports delegation
     def get_spending_by_category(self, year: int, month: int):
         """Get spending breakdown by category for a specific month"""
+        assert self.reports_manager is not None
         return self.reports_manager.get_spending_by_category(year, month)
 
     def get_spending_with_balance_percentage(self, year: int, month: int):
         """Get spending breakdown with percentage of current balance spent"""
+        assert self.reports_manager is not None
         return self.reports_manager.get_spending_with_balance_percentage(year, month)
 
     # Spending limits delegation
@@ -142,12 +209,14 @@ class BudgetManager:
         source: Optional[str] = None,
     ) -> bool:
         """Set a spending limit"""
+        assert self.limits_manager is not None
         return self.limits_manager.set_spending_limit(
             limit_amount, period, category, source
         )
 
     def get_spending_limits(self):
         """Get all spending limits"""
+        assert self.limits_manager is not None
         return self.limits_manager.get_spending_limits()
 
     def check_spending_limit(
@@ -157,6 +226,7 @@ class BudgetManager:
         period: str = "monthly",
     ):
         """Check if spending limit is exceeded"""
+        assert self.limits_manager is not None
         return self.limits_manager.check_spending_limit(category, source, period)
 
     # Export delegation
@@ -167,6 +237,7 @@ class BudgetManager:
         end_date: Optional[str] = None,
     ):
         """Export transactions to CSV file"""
+        assert self.export_manager is not None
         return self.export_manager.export_to_csv(filepath, start_date, end_date)
 
     def export_to_json(
@@ -176,12 +247,26 @@ class BudgetManager:
         end_date: Optional[str] = None,
     ):
         """Export transactions to JSON file"""
+        assert self.export_manager is not None
         return self.export_manager.export_to_json(filepath, start_date, end_date)
 
     def __enter__(self):
-        """Context manager entry"""
+        """Enter the context manager and initialize database session.
+
+        Creates a new database session and initializes all manager instances.
+        This method is called automatically when entering a 'with' block.
+
+        Returns:
+            BudgetManager: Returns self for use in the 'with' statement.
+
+        Example:
+            >>> with BudgetManager() as bm:
+            ...     # bm is now ready to use with active session
+            ...     bm.add_transaction("card", "Visa", "Coffee", 5.0)
+        """
         # Create a session using the sessionmaker
         from sqlalchemy.orm import sessionmaker
+
         Session = sessionmaker(bind=self.engine)
         self.session = Session()
 
@@ -196,9 +281,28 @@ class BudgetManager:
         self.categories = self.categories_manager.load_categories()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit"""
-        if hasattr(self, 'session') and self.session:
+    def __exit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
+        """Exit the context manager and handle session cleanup.
+
+        Commits the database session if no exceptions occurred, otherwise
+        rolls back. The session is always closed.
+
+        Args:
+            exc_type: Exception type if an exception occurred, None otherwise.
+            exc_val: Exception value if an exception occurred, None otherwise.
+            exc_tb: Exception traceback if an exception occurred, None otherwise.
+
+        Example:
+            >>> with BudgetManager() as bm:
+            ...     bm.add_transaction("card", "Visa", "Coffee", 5.0)
+            ...     # Session automatically committed here if no errors
+            ...
+            >>> # If an exception occurs, session is rolled back
+            >>> with BudgetManager() as bm:
+            ...     bm.add_transaction("invalid", None, "", -5.0)
+            ...     # ValidationError raised, session rolled back
+        """
+        if hasattr(self, "session") and self.session:
             if exc_type is None:
                 self.session.commit()
             else:

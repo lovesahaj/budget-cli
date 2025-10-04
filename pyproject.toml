@@ -18,7 +18,7 @@ dev = [
 ]
 
 [project.scripts]
-budget = "budget.budget_cli:main"
+budget = "budget.budget_cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

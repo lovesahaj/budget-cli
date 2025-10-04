@@ -4,7 +4,6 @@ import time
 from datetime import datetime
 from typing import List, Tuple
 
-from budget_core import BudgetManager
 from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
@@ -21,6 +20,8 @@ from textual.widgets import (
     Select,
     Static,
 )
+
+from budget.budget_core import BudgetManager
 
 
 class BalancePanel(Static):
@@ -127,21 +128,16 @@ class QuickStatsPanel(Static):
 
         # Today's spending
         now = datetime.now()
-        today_str = now.strftime("%Y-%m-%d")
         today_spending = sum(
-            t["amount"] for t in recent if t["timestamp"].startswith(today_str)
+            t["amount"] for t in recent if t["timestamp"].date() == now.date()
         )
 
         # This week's spending
         week_spending = 0
         for t in recent:
-            try:
-                t_date = datetime.strptime(t["timestamp"][:10], "%Y-%m-%d")
-                days_diff = (now - t_date).days
-                if days_diff <= 7:
-                    week_spending += t["amount"]
-            except:
-                pass
+            days_diff = (now - t["timestamp"]).days
+            if days_diff <= 7:
+                week_spending += t["amount"]
 
         # Check limits
         limits = self.manager.get_spending_limits()
@@ -184,21 +180,23 @@ class RecentTransactionsTable(DataTable):
         self._column_keys: list[str] = []
 
     def on_mount(self) -> None:
-        self.cursor_type = "cell"
+        self.cursor_type = "row"
         self.zebra_stripes = True
 
-        columns = [
-            ("ID", 5),
-            ("Type", 8),
-            ("Card", 10),
-            ("Category", 15),
-            ("Description", 30),
-            ("Amount", 10),
-            ("Date", 19),
-        ]
-        self._column_keys = [label.lower() for label, _ in columns]
-        for key, (label, width) in zip(self._column_keys, columns):
-            self.add_column(label, key=key, width=width)
+        # Only add columns if they don't exist yet
+        if not self.columns:
+            columns = [
+                ("ID", 5),
+                ("Type", 8),
+                ("Card", 10),
+                ("Category", 15),
+                ("Description", 30),
+                ("Amount", 10),
+                ("Date", 19),
+            ]
+            self._column_keys = [label.lower() for label, _ in columns]
+            for key, (label, width) in zip(self._column_keys, columns):
+                self.add_column(label, key=key, width=width)
 
         try:
             transactions = self.manager.get_recent_transactions(self.limit)
@@ -221,19 +219,10 @@ class RecentTransactionsTable(DataTable):
                     category_display,
                     desc,
                     amount_display,
-                    t["timestamp"][:16],  # Remove seconds
+                    t["timestamp"].strftime("%Y-%m-%d %H:%M"),
                 )
         except Exception as e:
             pass
-
-    def change_column_width(self, column_index: int, change: int):
-        """Changes the width of a column."""
-        if 0 <= column_index < len(self._column_keys):
-            key = self._column_keys[column_index]
-            column = self.columns[key]
-            new_width = column.width + change
-            if new_width > 2:  # Minimum width
-                column.width = new_width
 
 
 class DailySpendBars(Static):
@@ -683,31 +672,26 @@ class BudgetTUI(App):
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("r", "refresh", "Refresh"),
-        ("+", "increase_window", "More Days"),
-        ("-", "decrease_window", "Fewer Days"),
-        ("j", "move_down", "Down"),
-        ("k", "move_up", "Up"),
-        ("l", "cursor_right", "Right"),
-        ("h", "cursor_left", "Left"),
-        (">", "widen_column", "Widen Col"),
-        ("<", "narrow_column", "Narrow Col"),
-        ("G", "bottom", "Bottom"),
-        ("ctrl+d", "page_down", "PgDn"),
-        ("ctrl+u", "page_up", "PgUp"),
-        ("tab", "switch_focus", "Switch Focus"),
-        ("a", "add_transaction", "Add Transaction"),
-        ("d", "delete_transaction", "Delete Transaction"),
-        ("e", "edit_transaction", "Edit Transaction"),
+        ("a", "add_transaction", "Add"),
+        ("e", "edit_transaction", "Edit"),
+        ("d", "delete_transaction", "Delete"),
+        ("?", "show_help", "Help"),
     ]
 
     def __init__(self, db_path: str = "budget.db") -> None:
         super().__init__()
         self.manager = BudgetManager(db_path)
-        self.manager.connect_db()
-        self.manager.load_cards()
-        self.manager.load_categories()
+        self.manager.__enter__()
         self.title = "Budget Tracker"
         self.sub_title = "Personal Finance Manager"
+
+    def on_unmount(self) -> None:
+        """Cleanup database connection when app closes."""
+        self.manager.__exit__(None, None, None)
+
+    def on_mount(self) -> None:
+        """Show welcome message on startup."""
+        self.notify("Welcome! Press ? for help, a to add transaction, q to quit", timeout=5)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -741,9 +725,8 @@ class BudgetTUI(App):
 
     def action_refresh(self) -> None:
         try:
-            self.manager.connect_db()
+            self.manager.__enter__()
             self.manager.load_cards()
-            self.manager.load_categories()
 
             # Refresh all panels
             self.query_one("#balances", BalancePanel).render_balances()
@@ -759,86 +742,30 @@ class BudgetTUI(App):
         except Exception as e:
             self.notify(f"Error refreshing: {str(e)}", severity="error")
 
-    def action_increase_window(self) -> None:
-        chart = self.query_one("#daily", DailySpendBars)
-        chart.days = min(chart.days + 7, 120)
-        chart.refresh_data()
-        self.notify(f"Showing {chart.days} days")
+    def action_show_help(self) -> None:
+        """Show help dialog."""
+        help_text = """
+[bold cyan]Budget Tracker - Keyboard Shortcuts[/bold cyan]
 
-    def action_decrease_window(self) -> None:
-        chart = self.query_one("#daily", DailySpendBars)
-        chart.days = max(chart.days - 7, 7)
-        chart.refresh_data()
-        self.notify(f"Showing {chart.days} days")
+[bold yellow]Navigation:[/bold yellow]
+  ↑/↓         Navigate transactions
+  PgUp/PgDn   Scroll page
+  Home/End    Jump to start/end
 
-    def _table(self) -> RecentTransactionsTable:
-        return self.query_one("#recent", RecentTransactionsTable)
+[bold yellow]Actions:[/bold yellow]
+  a           Add new transaction
+  e           Edit selected transaction
+  d           Delete selected transaction
+  r           Refresh data
 
-    def action_move_down(self) -> None:
-        focused = self.focused
-        if isinstance(focused, RecentTransactionsTable):
-            focused.move_cursor(row=focused.cursor_row + 1)
+[bold yellow]Other:[/bold yellow]
+  ?           Show this help
+  q           Quit application
 
-    def action_move_up(self) -> None:
-        focused = self.focused
-        if isinstance(focused, RecentTransactionsTable):
-            if focused.cursor_row > 0:
-                focused.move_cursor(row=focused.cursor_row - 1)
-
-    def action_bottom(self) -> None:
-        focused = self.focused
-        if isinstance(focused, RecentTransactionsTable):
-            focused.move_cursor(row=focused.row_count - 1)
-
-    def action_page_down(self) -> None:
-        focused = self.focused
-        if isinstance(focused, RecentTransactionsTable):
-            new_row = min(focused.cursor_row + 10, focused.row_count - 1)
-            focused.move_cursor(row=new_row)
-
-    def action_page_up(self) -> None:
-        focused = self.focused
-        if isinstance(focused, RecentTransactionsTable):
-            new_row = max(focused.cursor_row - 10, 0)
-            focused.move_cursor(row=new_row)
-
-    def action_cursor_right(self) -> None:
-        table = self._table()
-        table.move_cursor(column=table.cursor_column + 1)
-
-    def action_cursor_left(self) -> None:
-        table = self._table()
-        if table.cursor_column > 0:
-            table.move_cursor(column=table.cursor_column - 1)
-
-    def action_widen_column(self) -> None:
-        table = self._table()
-        table.change_column_width(table.cursor_column, 2)
-
-    def action_narrow_column(self) -> None:
-        table = self._table()
-        table.change_column_width(table.cursor_column, -2)
-
-    def action_switch_focus(self) -> None:
-        """Switches focus between the main panels."""
-        panels = [
-            self.query_one("#balances"),
-            self.query_one("#spending"),
-            self.query_one("#stats"),
-            self.query_one("#daily"),
-            self.query_one("#recent"),
-        ]
-
-        current_focus = self.focused
-
-        try:
-            current_index = panels.index(current_focus)
-            next_index = (current_index + 1) % len(panels)
-        except ValueError:
-            next_index = 0
-
-        panels[next_index].focus()
-        self.notify(f"Focused on {panels[next_index].id}", severity="information")
+[dim]Use arrow keys to navigate the transaction table.
+Click on input fields to enter data in forms.[/dim]
+"""
+        self.notify(help_text, timeout=10)
 
     def action_add_transaction(self) -> None:
         """Shows the add transaction screen."""
@@ -846,15 +773,14 @@ class BudgetTUI(App):
 
     def action_delete_transaction(self) -> None:
         """Deletes the selected transaction."""
-        table = self._table()
+        table = self.query_one("#recent", RecentTransactionsTable)
         if table.cursor_row is not None:
             try:
-                row_key = table.get_row_key(table.cursor_row)
-                cell_value = table.get_cell_by_key(row_key, "id")
-                transaction_id = int(cell_value)
+                row_key = table.get_row_at(table.cursor_row)[0]
+                transaction_id = int(row_key)
                 self.push_screen(DeleteTransactionScreen(transaction_id))
-            except Exception:
-                self.notify("No transaction selected.", severity="error")
+            except Exception as e:
+                self.notify(f"No transaction selected: {e}", severity="error")
 
     def delete_transaction(self, transaction_id: int) -> None:
         """Deletes a transaction and refreshes the UI."""
@@ -869,34 +795,19 @@ class BudgetTUI(App):
 
     def action_edit_transaction(self) -> None:
         """Edits the selected transaction."""
-        table = self._table()
+        table = self.query_one("#recent", RecentTransactionsTable)
         if table.cursor_row is not None:
             try:
-                row_key = table.get_row_key(table.cursor_row)
-                cell_value = table.get_cell_by_key(row_key, "id")
-                transaction_id = int(cell_value)
+                row_key = table.get_row_at(table.cursor_row)[0]
+                transaction_id = int(row_key)
                 transaction = self.manager.get_transaction_by_id(transaction_id)
                 if transaction:
                     self.push_screen(EditTransactionScreen(self.manager, transaction))
                 else:
                     self.notify("Transaction not found.", severity="error")
-            except Exception:
-                self.notify("No transaction selected.", severity="error")
+            except Exception as e:
+                self.notify(f"No transaction selected: {e}", severity="error")
 
-    _last_g: float = 0.0
-
-    def on_key(self, event) -> None:
-        # Detect 'gg' to jump to top of table
-        if event.key == "g":
-            now = time.monotonic()
-            if now - self._last_g < 0.6:
-                focused = self.focused
-                if isinstance(focused, RecentTransactionsTable):
-                    focused.move_cursor(row=0)
-                self._last_g = 0.0
-            else:
-                self._last_g = now
-            event.stop()
 
 
 def run_tui(db_path: str = "budget.db") -> None:
