@@ -8,14 +8,16 @@ managers and handles database session management via context manager protocol.
 import os
 from typing import Dict, List, Optional, Tuple
 
-from budget import database
-from budget.balances import BalanceManager
-from budget.cards import CardManager
-from budget.categories import CategoryManager
-from budget.exports import ExportManager
-from budget.limits import LimitManager
-from budget.reports import ReportManager
-from budget.transactions import TransactionManager
+from loguru import logger
+
+from budget.core.balances import BalanceManager
+from budget.core.cards import CardManager
+from budget.core.categories import CategoryManager
+from budget.core.exports import ExportManager
+from budget.core.limits import LimitManager
+from budget.core.reports import ReportManager
+from budget.core.transactions import TransactionManager
+from budget.infrastructure import database
 
 
 class BudgetManager:
@@ -63,8 +65,10 @@ class BudgetManager:
                     Can be overridden by BUDGET_DB_NAME environment variable.
         """
         self.db_name = os.environ.get("BUDGET_DB_NAME", db_name)
+        logger.debug(f"Initializing BudgetManager with database: {self.db_name}")
         self.engine = database.get_engine(self.db_name)
-        database.init_db(self.engine)
+        # Note: init_db is called during server startup, no need to call it here
+        # database.init_db(self.engine)
         self.cards = []
         self.categories = []
         self.transactions: Optional[TransactionManager] = None
@@ -264,12 +268,12 @@ class BudgetManager:
             ...     # bm is now ready to use with active session
             ...     bm.add_transaction("card", "Visa", "Coffee", 5.0)
         """
-        # Create a session using the sessionmaker
-        from sqlalchemy.orm import sessionmaker
+        logger.debug("Entering BudgetManager context")
+        # Use the scoped session factory for better thread safety
+        SessionFactory = database.get_session_factory(self.engine)
+        self.session = SessionFactory()
 
-        Session = sessionmaker(bind=self.engine)
-        self.session = Session()
-
+        logger.debug("Initializing all manager instances")
         self.transactions = TransactionManager(self.session)
         self.card_manager = CardManager(self.session)
         self.categories_manager = CategoryManager(self.session)
@@ -279,6 +283,7 @@ class BudgetManager:
         self.export_manager = ExportManager(self.transactions)
         self.load_cards()
         self.categories = self.categories_manager.load_categories()
+        logger.info("BudgetManager context initialized successfully")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
@@ -302,9 +307,15 @@ class BudgetManager:
             ...     bm.add_transaction("invalid", None, "", -5.0)
             ...     # ValidationError raised, session rolled back
         """
+        logger.debug("Exiting BudgetManager context")
         if hasattr(self, "session") and self.session:
             if exc_type is None:
+                logger.debug("Committing session")
                 self.session.commit()
             else:
+                logger.warning(f"Rolling back session due to exception: {exc_type.__name__}")
                 self.session.rollback()
-            self.session.close()
+            # For scoped sessions, we should use remove() instead of close()
+            SessionFactory = database.get_session_factory(self.engine)
+            SessionFactory.remove()
+        logger.info("BudgetManager context closed")

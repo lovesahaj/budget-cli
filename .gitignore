@@ -66,3 +66,9 @@ cover/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# gRPC generated files
+budget/proto/*_pb2.py
+budget/proto/*_pb2_grpc.py
+.coverage
+GEMINI.md

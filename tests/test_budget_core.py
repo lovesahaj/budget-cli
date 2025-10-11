@@ -2,8 +2,8 @@
 
 import pytest
 
-from budget.budget_core import BudgetManager
-from budget.exceptions import BudgetError, ValidationError
+from budget.core.manager import BudgetManager
+from budget.domain.exceptions import BudgetError, ValidationError
 
 
 def test_budget_manager_context_manager(temp_db):

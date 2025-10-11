@@ -1,13 +1,14 @@
 [project]
 name = "budget"
 version = "0.1.0"
-description = "Personal Budget Tracker - A command-line application for tracking daily transactions, account balances, spending limits, and financial analytics"
+description = "Personal Budget Tracker - A gRPC-based application for tracking daily transactions, account balances, spending limits, and financial analytics"
 requires-python = ">=3.13"
 dependencies = [
-    "typer>=0.17.4",
-    "rich>=13.7.1",
-    "textual>=0.82.0",
     "sqlalchemy>=2.0.0",
+    "grpcio>=1.60.0",
+    "grpcio-tools>=1.60.0",
+    "protobuf>=4.25.0",
+    "loguru>=0.7.0",
 ]
 
 [project.optional-dependencies]
@@ -18,7 +19,7 @@ dev = [
 ]
 
 [project.scripts]
-budget = "budget.budget_cli:app"
+budget-grpc-server = "budget.grpc_server:serve"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -30,4 +31,10 @@ addopts = [
     "--cov=budget",
     "--cov-report=term-missing",
     "--cov-report=html",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
 ]

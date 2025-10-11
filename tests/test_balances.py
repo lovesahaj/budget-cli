@@ -2,7 +2,7 @@
 
 import pytest
 
-from budget.exceptions import ValidationError
+from budget.domain.exceptions import ValidationError
 
 
 def test_get_balance_existing(balance_manager, sample_balances):

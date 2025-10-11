@@ -5,11 +5,21 @@ in the budget tracker, including cards, categories, transactions, balances,
 and spending limits.
 """
 
-from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, MetaData, Table)
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    create_engine,
+)
+from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.sql import func
 
 Base = declarative_base()
+
 
 class DictAccessMixin:
     """Mixin to add dictionary-like attribute access to SQLAlchemy models.
@@ -23,6 +33,7 @@ class DictAccessMixin:
         >>> transaction.description  # Returns "Coffee"
         >>> transaction["description"]  # Also returns "Coffee"
     """
+
     def __getitem__(self, key):
         """Get attribute value using dictionary-style access.
 
@@ -37,6 +48,7 @@ class DictAccessMixin:
         """
         return getattr(self, key)
 
+
 class Card(Base, DictAccessMixin):
     """Payment card entity model.
 
@@ -47,9 +59,11 @@ class Card(Base, DictAccessMixin):
         id (int): Unique identifier (auto-incremented).
         name (str): Unique name of the card (e.g., "Visa", "ICICI").
     """
-    __tablename__ = 'cards'
+
+    __tablename__ = "cards"
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, unique=True, nullable=False)
+
 
 class Category(Base, DictAccessMixin):
     """Transaction category model.
@@ -62,10 +76,12 @@ class Category(Base, DictAccessMixin):
         name (str): Unique name of the category.
         description (str): Optional description of the category.
     """
-    __tablename__ = 'categories'
+
+    __tablename__ = "categories"
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, unique=True, nullable=False)
     description = Column(String)
+
 
 class Transaction(Base, DictAccessMixin):
     """Financial transaction model.
@@ -82,7 +98,8 @@ class Transaction(Base, DictAccessMixin):
         amount (float): Transaction amount (must be positive).
         timestamp (datetime): When the transaction was created (auto-set).
     """
-    __tablename__ = 'transactions'
+
+    __tablename__ = "transactions"
     id = Column(Integer, primary_key=True, autoincrement=True)
     type = Column(String, nullable=False)
     card = Column(String)
@@ -90,6 +107,7 @@ class Transaction(Base, DictAccessMixin):
     description = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=func.now())
+
 
 class Balance(Base, DictAccessMixin):
     """Account balance model.
@@ -102,9 +120,11 @@ class Balance(Base, DictAccessMixin):
                    This is the primary key.
         amount (float): Current balance amount. Defaults to 0.0.
     """
-    __tablename__ = 'balances'
+
+    __tablename__ = "balances"
     type = Column(String, unique=True, nullable=False, primary_key=True)
     amount = Column(Float, nullable=False, default=0.0)
+
 
 class SpendingLimit(Base, DictAccessMixin):
     """Spending limit configuration model.
@@ -119,7 +139,8 @@ class SpendingLimit(Base, DictAccessMixin):
         limit_amount (float): Maximum allowed spending amount.
         period (str): Time period - "daily", "weekly", "monthly", or "yearly".
     """
-    __tablename__ = 'spending_limits'
+
+    __tablename__ = "spending_limits"
     id = Column(Integer, primary_key=True, autoincrement=True)
     category = Column(String)
     source = Column(String)

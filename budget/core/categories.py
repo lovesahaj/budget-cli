@@ -6,11 +6,12 @@ including loading, creating, and retrieving categories with their descriptions.
 
 from typing import List
 
+from loguru import logger
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from budget.exceptions import DatabaseError, ValidationError
-from budget.models import Category
+from budget.domain.exceptions import DatabaseError, ValidationError
+from budget.domain.models import Category
 
 
 class CategoryManager:
@@ -36,6 +37,7 @@ class CategoryManager:
         Args:
             session: SQLAlchemy database session for database operations.
         """
+        logger.debug("Initializing CategoryManager")
         self.session = session
         self.categories: List[str] = []
 
@@ -52,6 +54,7 @@ class CategoryManager:
             >>> categories = cat_manager.load_categories()
             >>> print(categories)  # ['Entertainment', 'Food', 'Transport']
         """
+        logger.info("Loading categories from database")
         try:
             categories: List[str] = [
                 category.name
@@ -60,8 +63,10 @@ class CategoryManager:
                 .all()
             ]
             self.categories = categories
+            logger.debug(f"Loaded {len(self.categories)} categories")
             return self.categories
         except Exception as e:
+            logger.error(f"Failed to load categories: {e}")
             raise DatabaseError(f"Failed to load categories: {e}")
 
     def add_category(self, name: str, description: str = "") -> bool:
@@ -87,24 +92,29 @@ class CategoryManager:
             >>> if success:
             ...     print("Category added")
         """
+        logger.info(f"Attempting to add category: '{name}'")
         try:
             if not name or not name.strip():
+                logger.warning("Category name validation failed: empty or whitespace-only")
                 raise ValidationError("Category name cannot be empty")
 
             new_category = Category(name=name.strip(), description=description.strip())
             self.session.add(new_category)
-            self.session.commit()
+            self.session.flush()
             self.categories.append(name.strip())
             self.categories.sort()
+            logger.success(f"Successfully added category: '{name.strip()}'")
             return True
         except IntegrityError:
             self.session.rollback()
+            logger.warning(f"Category '{name}' already exists")
             return False
         except ValidationError:
             self.session.rollback()
             raise
         except Exception as e:
             self.session.rollback()
+            logger.error(f"Failed to add category '{name}': {e}")
             raise DatabaseError(f"Failed to add category: {e}")
 
     def get_categories(self) -> List[Category]:
@@ -122,7 +132,11 @@ class CategoryManager:
             >>> for cat in categories:
             ...     print(f"{cat.name}: {cat.description}")
         """
+        logger.debug("Retrieving all categories with descriptions")
         try:
-            return self.session.query(Category).order_by(Category.name).all()
+            categories = self.session.query(Category).order_by(Category.name).all()
+            logger.info(f"Retrieved {len(categories)} categories")
+            return categories
         except Exception as e:
+            logger.error(f"Failed to get categories: {e}")
             raise DatabaseError(f"Failed to get categories: {e}")

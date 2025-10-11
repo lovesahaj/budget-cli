@@ -9,7 +9,9 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from budget.exceptions import BudgetError
+from loguru import logger
+
+from budget.domain.exceptions import BudgetError
 
 
 class ExportManager:
@@ -42,6 +44,7 @@ class ExportManager:
                                transaction data.
         """
         self.transaction_manager = transaction_manager
+        logger.debug(f"ExportManager initialized with transaction_manager: {type(transaction_manager).__name__}")
 
     def export_to_csv(
         self,
@@ -72,13 +75,19 @@ class ExportManager:
             ...     end_date="2025-10-31"
             ... )
         """
+        date_range = f"from {start_date or 'earliest'} to {end_date or 'latest'}"
+        logger.info(f"Starting CSV export to '{filepath}' {date_range}")
+
         try:
             transactions = self.transaction_manager.search_transactions(
                 start_date=start_date, end_date=end_date
             )
 
+            logger.debug(f"Retrieved {len(transactions)} transactions for CSV export")
+
             with open(filepath, "w", newline="", encoding="utf-8") as csvfile:
                 if not transactions:
+                    logger.info(f"No transactions found for export {date_range}, creating empty file")
                     return
 
                 fieldnames = [
@@ -96,11 +105,17 @@ class ExportManager:
                 for transaction in transactions:
                     row = {field: getattr(transaction, field) for field in fieldnames}
                     # Convert timestamp to string for CSV
-                    if row.get('timestamp'):
-                        row['timestamp'] = str(row['timestamp'])
+                    if row.get("timestamp"):
+                        row["timestamp"] = str(row["timestamp"])
                     writer.writerow(row)
+
+            logger.info(f"Successfully exported {len(transactions)} transactions to CSV: '{filepath}'")
         except IOError as e:
+            logger.error(f"Failed to export to CSV '{filepath}': {e}")
             raise BudgetError(f"Failed to export to CSV: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error during CSV export to '{filepath}': {e}")
+            raise
 
     def export_to_json(
         self,
@@ -133,36 +148,59 @@ class ExportManager:
             >>> #   }
             >>> # }
         """
+        date_range = f"from {start_date or 'earliest'} to {end_date or 'latest'}"
+        logger.info(f"Starting JSON export to '{filepath}' {date_range}")
+
         try:
             transactions = self.transaction_manager.search_transactions(
                 start_date=start_date, end_date=end_date
+            )
+
+            total_amount = sum(t.amount for t in transactions)
+            logger.debug(
+                f"Retrieved {len(transactions)} transactions for JSON export, "
+                f"total amount: {total_amount:.2f}"
             )
 
             with open(filepath, "w", encoding="utf-8") as jsonfile:
                 # Convert transactions to clean dicts
                 transaction_dicts = []
                 for t in transactions:
-                    transaction_dicts.append({
-                        "id": t.id,
-                        "type": t.type,
-                        "card": t.card,
-                        "category": t.category,
-                        "description": t.description,
-                        "amount": t.amount,
-                        "timestamp": str(t.timestamp) if t.timestamp else None,
-                    })
+                    transaction_dicts.append(
+                        {
+                            "id": t.id,
+                            "type": t.type,
+                            "card": t.card,
+                            "category": t.category,
+                            "description": t.description,
+                            "amount": t.amount,
+                            "timestamp": str(t.timestamp) if t.timestamp else None,
+                        }
+                    )
+
+                summary = {
+                    "total_transactions": len(transactions),
+                    "total_amount": total_amount,
+                }
 
                 json.dump(
                     {
                         "export_date": datetime.now().isoformat(),
                         "transactions": transaction_dicts,
-                        "summary": {
-                            "total_transactions": len(transactions),
-                            "total_amount": sum(t.amount for t in transactions),
-                        },
+                        "summary": summary,
                     },
                     jsonfile,
                     indent=2,
                 )
+
+            logger.debug(f"JSON export summary: {summary}")
+            logger.info(
+                f"Successfully exported {len(transactions)} transactions to JSON: '{filepath}' "
+                f"(total amount: {total_amount:.2f})"
+            )
         except IOError as e:
+            logger.error(f"Failed to export to JSON '{filepath}': {e}")
             raise BudgetError(f"Failed to export to JSON: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error during JSON export to '{filepath}': {e}")
+            raise

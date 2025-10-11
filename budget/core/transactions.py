@@ -5,11 +5,14 @@ transactions, including creation, updates, deletion, retrieval, and searching.
 """
 
 from typing import List, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
 
-from budget.exceptions import DatabaseError, ValidationError
-from budget.models import Transaction
+from loguru import logger
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from budget.domain.exceptions import DatabaseError, ValidationError
+from budget.domain.models import Transaction
+
 
 class TransactionManager:
     """Manages financial transactions in the budget tracker.
@@ -34,6 +37,7 @@ class TransactionManager:
         Args:
             session: SQLAlchemy database session for database operations.
         """
+        logger.debug("Initializing TransactionManager")
         self.session = session
 
     def add_transaction(
@@ -67,12 +71,20 @@ class TransactionManager:
             ...     "card", "Visa", "Lunch at cafe", 25.50, "Food"
             ... )
         """
+        logger.info(
+            f"Adding transaction: type={t_type}, card={card}, "
+            f"description='{description}', amount={amount}, category={category}"
+        )
+
         try:
             if not description or not description.strip():
+                logger.warning("Validation failed: Description cannot be empty")
                 raise ValidationError("Description cannot be empty")
             if amount <= 0:
+                logger.warning(f"Validation failed: Amount must be positive, got {amount}")
                 raise ValidationError("Amount must be positive")
             if t_type not in ["cash", "card"]:
+                logger.warning(f"Validation failed: Invalid transaction type '{t_type}'")
                 raise ValidationError("Transaction type must be 'cash' or 'card'")
 
             new_transaction = Transaction(
@@ -83,13 +95,16 @@ class TransactionManager:
                 amount=float(amount),
             )
             self.session.add(new_transaction)
-            self.session.commit()
+            self.session.flush()
+            logger.info(f"Transaction added successfully with ID: {new_transaction.id}")
             return new_transaction.id
         except ValidationError:
             self.session.rollback()
+            logger.error("Failed to add transaction due to validation error")
             raise
         except Exception as e:
             self.session.rollback()
+            logger.error(f"Failed to add transaction: {e}")
             raise DatabaseError(f"Failed to add transaction: {e}")
 
     def update_transaction(
@@ -128,10 +143,15 @@ class TransactionManager:
             ...     123, amount=30.0, category="Entertainment"
             ... )
         """
+        logger.info(f"Updating transaction with ID: {transaction_id}")
+
         try:
-            transaction = self.session.query(Transaction).filter_by(id=transaction_id).first()
+            transaction = (
+                self.session.query(Transaction).filter_by(id=transaction_id).first()
+            )
 
             if not transaction:
+                logger.warning(f"Transaction with ID {transaction_id} not found")
                 return False
 
             updated = False
@@ -139,31 +159,40 @@ class TransactionManager:
             if t_type is not None and t_type.strip():
                 if t_type not in ["cash", "card"]:
                     raise ValidationError("Transaction type must be 'cash' or 'card'")
+                logger.debug(f"Updating type: {transaction.type} -> {t_type.strip()}")
                 transaction.type = t_type.strip()
                 if t_type.strip() == "cash":
+                    logger.debug("Setting card to None for cash transaction")
                     transaction.card = None
                 updated = True
 
-            if card is not None and transaction.type != 'cash':
+            if card is not None and transaction.type != "cash":
+                logger.debug(f"Updating card: {transaction.card} -> {card}")
                 transaction.card = card
                 updated = True
 
             if description is not None and description.strip():
+                logger.debug(f"Updating description: '{transaction.description}' -> '{description.strip()}'")
                 transaction.description = description.strip()
                 updated = True
 
             if amount is not None:
                 if amount <= 0:
                     raise ValidationError("Amount must be positive")
+                logger.debug(f"Updating amount: {transaction.amount} -> {amount}")
                 transaction.amount = float(amount)
                 updated = True
 
             if category is not None:
+                logger.debug(f"Updating category: {transaction.category} -> {category}")
                 transaction.category = category
                 updated = True
 
             if updated:
-                self.session.commit()
+                self.session.flush()
+                logger.info(f"Transaction {transaction_id} updated successfully")
+            else:
+                logger.debug(f"No changes made to transaction {transaction_id}")
             return updated
         except ValidationError:
             self.session.rollback()
@@ -190,15 +219,22 @@ class TransactionManager:
             >>> if success:
             ...     print("Transaction deleted")
         """
+        logger.info(f"Deleting transaction with ID: {transaction_id}")
+
         try:
-            transaction = self.session.query(Transaction).filter_by(id=transaction_id).first()
+            transaction = (
+                self.session.query(Transaction).filter_by(id=transaction_id).first()
+            )
             if transaction:
                 self.session.delete(transaction)
-                self.session.commit()
+                self.session.flush()
+                logger.info(f"Transaction {transaction_id} deleted successfully")
                 return True
+            logger.warning(f"Transaction with ID {transaction_id} not found for deletion")
             return False
         except Exception as e:
             self.session.rollback()
+            logger.error(f"Failed to delete transaction {transaction_id}: {e}")
             raise DatabaseError(f"Failed to delete transaction: {e}")
 
     def get_transaction_by_id(self, transaction_id: int) -> Optional[Transaction]:
@@ -218,6 +254,7 @@ class TransactionManager:
             >>> if txn:
             ...     print(f"{txn.description}: ${txn.amount}")
         """
+        logger.debug(f"Retrieving transaction by ID: {transaction_id}")
         try:
             return self.session.query(Transaction).filter_by(id=transaction_id).first()
         except Exception as e:
@@ -241,8 +278,16 @@ class TransactionManager:
             >>> for txn in recent:
             ...     print(f"{txn.description}: ${txn.amount}")
         """
+        logger.debug(f"Retrieving recent transactions with limit: {limit}")
         try:
-            return self.session.query(Transaction).order_by(desc(Transaction.timestamp), desc(Transaction.id)).limit(limit).all()
+            results = (
+                self.session.query(Transaction)
+                .order_by(desc(Transaction.timestamp), desc(Transaction.id))
+                .limit(limit)
+                .all()
+            )
+            logger.info(f"Retrieved {len(results)} recent transaction(s)")
+            return results
         except Exception as e:
             raise DatabaseError(f"Failed to get recent transactions: {e}")
 
@@ -286,12 +331,26 @@ class TransactionManager:
             >>> # Search by text in description
             >>> results = txn_mgr.search_transactions(query="coffee")
         """
+        search_criteria = {
+            "query": query,
+            "category": category,
+            "card": card,
+            "start_date": start_date,
+            "end_date": end_date,
+            "min_amount": min_amount,
+            "max_amount": max_amount,
+        }
+        logger.info(f"Searching transactions with criteria: {search_criteria}")
+
         try:
             q = self.session.query(Transaction)
 
             if query:
                 search_term = f"%{query}%"
-                q = q.filter(Transaction.description.like(search_term) | Transaction.card.like(search_term))
+                q = q.filter(
+                    Transaction.description.like(search_term)
+                    | Transaction.card.like(search_term)
+                )
 
             if category:
                 q = q.filter(Transaction.category == category)
@@ -311,6 +370,8 @@ class TransactionManager:
             if max_amount is not None:
                 q = q.filter(Transaction.amount <= max_amount)
 
-            return q.order_by(desc(Transaction.timestamp), desc(Transaction.id)).all()
+            results = q.order_by(desc(Transaction.timestamp), desc(Transaction.id)).all()
+            logger.debug(f"Search returned {len(results)} transaction(s)")
+            return results
         except Exception as e:
             raise DatabaseError(f"Failed to search transactions: {e}")

@@ -2,7 +2,7 @@
 
 import pytest
 
-from budget.models import Balance, Card, Category, SpendingLimit, Transaction
+from budget.domain.models import Balance, Card, Category, SpendingLimit, Transaction
 
 
 def test_transaction_creation():

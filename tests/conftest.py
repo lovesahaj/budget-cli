@@ -8,15 +8,15 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from budget.balances import BalanceManager
-from budget.budget_core import BudgetManager
-from budget.cards import CardManager
-from budget.categories import CategoryManager
-from budget.exports import ExportManager
-from budget.limits import LimitManager
-from budget.models import Base
-from budget.reports import ReportManager
-from budget.transactions import TransactionManager
+from budget.core.balances import BalanceManager
+from budget.core.cards import CardManager
+from budget.core.categories import CategoryManager
+from budget.core.exports import ExportManager
+from budget.core.limits import LimitManager
+from budget.core.manager import BudgetManager
+from budget.core.reports import ReportManager
+from budget.core.transactions import TransactionManager
+from budget.domain.models import Base
 
 
 @pytest.fixture(scope="session")
@@ -135,11 +135,25 @@ def sample_transactions(transaction_manager):
     # - 2 transactions >= 10.00 (Lunch 10.50, Groceries 25.00)
     # - 1 transaction <= 5.00 (Bus fare 2.50)
     # - Movie ticket and Coffee both < 10.00
-    ids.append(transaction_manager.add_transaction("cash", None, "Lunch", 10.50, "Food"))
-    ids.append(transaction_manager.add_transaction("card", "Wise", "Groceries", 25.00, "Food"))
-    ids.append(transaction_manager.add_transaction("card", "ICICI", "Movie ticket", 8.00, "Entertainment"))
-    ids.append(transaction_manager.add_transaction("cash", None, "Bus fare", 2.50, "Transport"))
-    ids.append(transaction_manager.add_transaction("cash", None, "Coffee", 5.50, "Entertainment"))
+    ids.append(
+        transaction_manager.add_transaction("cash", None, "Lunch", 10.50, "Food")
+    )
+    ids.append(
+        transaction_manager.add_transaction("card", "Wise", "Groceries", 25.00, "Food")
+    )
+    ids.append(
+        transaction_manager.add_transaction(
+            "card", "ICICI", "Movie ticket", 8.00, "Entertainment"
+        )
+    )
+    ids.append(
+        transaction_manager.add_transaction("cash", None, "Bus fare", 2.50, "Transport")
+    )
+    ids.append(
+        transaction_manager.add_transaction(
+            "cash", None, "Coffee", 5.50, "Entertainment"
+        )
+    )
 
     return ids
 

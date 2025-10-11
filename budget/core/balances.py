@@ -5,10 +5,13 @@ for different payment sources (cash and various cards).
 """
 
 from typing import Dict
+
+from loguru import logger
 from sqlalchemy.orm import Session
 
-from budget.exceptions import DatabaseError, ValidationError
-from budget.models import Balance
+from budget.domain.exceptions import DatabaseError, ValidationError
+from budget.domain.models import Balance
+
 
 class BalanceManager:
     """Manages account balances for different payment sources.
@@ -32,6 +35,7 @@ class BalanceManager:
         Args:
             session: SQLAlchemy database session for database operations.
         """
+        logger.debug("Initializing BalanceManager")
         self.session = session
 
     def get_balance(self, balance_type: str) -> float:
@@ -50,10 +54,14 @@ class BalanceManager:
             >>> cash_balance = balance_mgr.get_balance("cash")
             >>> card_balance = balance_mgr.get_balance("Visa")
         """
+        logger.debug(f"Getting balance for type: {balance_type}")
         try:
             balance = self.session.query(Balance).filter_by(type=balance_type).first()
-            return float(balance.amount) if balance else 0.0
+            result = float(balance.amount) if balance else 0.0
+            logger.debug(f"Balance for {balance_type}: {result}")
+            return result
         except Exception as e:
+            logger.error(f"Failed to get balance for {balance_type}: {e}")
             raise DatabaseError(f"Failed to get balance: {e}")
 
     def update_balance(self, balance_type: str, amount: float):
@@ -74,21 +82,27 @@ class BalanceManager:
             >>> balance_mgr.update_balance("cash", 500.0)
             >>> balance_mgr.update_balance("Visa", 2000.0)
         """
+        logger.info(f"Updating balance for {balance_type} to {amount}")
         try:
             if not isinstance(amount, (int, float)):
+                logger.warning(f"Invalid amount type for {balance_type}: {type(amount)}")
                 raise ValidationError("Amount must be a number")
 
             balance = self.session.query(Balance).filter_by(type=balance_type).first()
             if balance:
+                logger.debug(f"Updating existing balance for {balance_type}")
                 balance.amount = float(amount)
             else:
+                logger.debug(f"Creating new balance record for {balance_type}")
                 balance = Balance(type=balance_type, amount=float(amount))
                 self.session.add(balance)
-            self.session.commit()
+            self.session.flush()
+            logger.success(f"Balance updated for {balance_type}: {amount}")
         except ValidationError:
             self.session.rollback()
             raise
         except Exception as e:
+            logger.error(f"Failed to update balance for {balance_type}: {e}")
             self.session.rollback()
             raise DatabaseError(f"Failed to update balance: {e}")
 
@@ -106,8 +120,12 @@ class BalanceManager:
             >>> balances = balance_mgr.get_all_balances()
             >>> print(balances)  # {'cash': 500.0, 'ICICI': 1000.0, 'Visa': 2000.0}
         """
+        logger.debug("Getting all balances")
         try:
             balances = self.session.query(Balance).order_by(Balance.type).all()
-            return {b.type: float(b.amount) for b in balances}
+            result = {b.type: float(b.amount) for b in balances}
+            logger.info(f"Retrieved {len(result)} balance records")
+            return result
         except Exception as e:
+            logger.error(f"Failed to get all balances: {e}")
             raise DatabaseError(f"Failed to get all balances: {e}")

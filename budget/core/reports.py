@@ -4,13 +4,16 @@ This module provides functionality for generating various financial reports
 and analytics, including spending breakdowns, trends, and balance analysis.
 """
 
-from typing import List, Tuple
-from sqlalchemy.orm import Session
-from sqlalchemy import func, extract
 from datetime import datetime, timedelta
+from typing import List, Tuple
 
-from budget.exceptions import DatabaseError
-from budget.models import Transaction
+from loguru import logger
+from sqlalchemy import extract, func
+from sqlalchemy.orm import Session
+
+from budget.domain.exceptions import DatabaseError
+from budget.domain.models import Transaction
+
 
 class ReportManager:
     """Manages financial reports and analytics.
@@ -37,8 +40,10 @@ class ReportManager:
             session: SQLAlchemy database session for database operations.
             balance_manager: BalanceManager instance for retrieving balances.
         """
+        logger.debug("Initializing ReportManager with session and balance_manager")
         self.session = session
         self.balance_manager = balance_manager
+        logger.debug("ReportManager initialized successfully")
 
     def get_monthly_spending(self, year: int, month: int) -> dict:
         """Get spending breakdown by payment source for a specific month.
@@ -59,6 +64,7 @@ class ReportManager:
             >>> for source, amount in spending.items():
             ...     print(f"{source}: ${amount:.2f}")
         """
+        logger.info(f"Getting monthly spending for {year}-{month:02d}")
         try:
             spending = {}
             results = (
@@ -77,12 +83,16 @@ class ReportManager:
                 .all()
             )
 
+            logger.debug(f"Query returned {len(results)} spending source(s)")
+
             for row in results:
                 source = row.card if row.card else row.type
                 spending[source] = float(row.total)
 
+            logger.debug(f"Processed spending for {len(spending)} unique source(s)")
             return spending
         except Exception as e:
+            logger.error(f"Failed to get monthly spending for {year}-{month:02d}: {e}")
             raise DatabaseError(f"Failed to get monthly spending: {e}")
 
     def get_spending_by_category(
@@ -108,6 +118,7 @@ class ReportManager:
             >>> for category, amount in spending:
             ...     print(f"{category}: ${amount:.2f}")
         """
+        logger.info(f"Getting spending by category for {year}-{month:02d}")
         try:
             results = (
                 self.session.query(
@@ -124,8 +135,15 @@ class ReportManager:
                 .all()
             )
 
-            return [(row.category or "Uncategorized", float(row.total)) for row in results]
+            logger.debug(f"Query returned {len(results)} category(ies)")
+
+            category_spending = [
+                (row.category or "Uncategorized", float(row.total)) for row in results
+            ]
+            logger.debug(f"Processed spending for {len(category_spending)} category(ies)")
+            return category_spending
         except Exception as e:
+            logger.error(f"Failed to get spending by category for {year}-{month:02d}: {e}")
             raise DatabaseError(f"Failed to get spending by category: {e}")
 
     def get_spending_with_balance_percentage(
@@ -150,19 +168,25 @@ class ReportManager:
             >>> for source, spent, balance, pct in data:
             ...     print(f"{source}: ${spent:.2f} / ${balance:.2f} ({pct:.1f}%)")
         """
+        logger.info(f"Getting spending with balance percentage for {year}-{month:02d}")
         spending = self.get_monthly_spending(year, month)
+        logger.debug(f"Retrieved spending data for {len(spending)} source(s)")
         result = []
 
         for source, amount_spent in spending.items():
             current_balance = self.balance_manager.get_balance(source)
+            logger.debug(f"Source '{source}': spent=${amount_spent:.2f}, balance=${current_balance:.2f}")
+
             if current_balance > 0:
                 balance_percentage = (amount_spent / current_balance) * 100
             else:
                 balance_percentage = 0 if amount_spent == 0 else float("inf")
 
+            logger.debug(f"Source '{source}': percentage={balance_percentage:.2f}%")
             result.append((source, amount_spent, current_balance, balance_percentage))
 
         result.sort(key=lambda x: x[1], reverse=True)
+        logger.debug(f"Completed balance percentage analysis for {len(result)} source(s)")
         return result
 
     def get_daily_spending(self, days: int = 30) -> List[Tuple[str, float]]:
@@ -186,22 +210,36 @@ class ReportManager:
             >>> for date, amount in daily:
             ...     print(f"{date}: ${amount:.2f}")
         """
+        logger.info(f"Getting daily spending for last {days} days")
         try:
             today = datetime.utcnow().date()
             date_list = [today - timedelta(days=x) for x in range(days)]
+            logger.debug(f"Querying spending from {date_list[-1]} to {date_list[0]}")
 
             results = (
                 self.session.query(
                     func.date(Transaction.timestamp).label("day"),
                     func.sum(Transaction.amount).label("total"),
                 )
-                .filter(func.date(Transaction.timestamp).in_([d.strftime("%Y-%m-%d") for d in date_list]))
+                .filter(
+                    func.date(Transaction.timestamp).in_(
+                        [d.strftime("%Y-%m-%d") for d in date_list]
+                    )
+                )
                 .group_by(func.date(Transaction.timestamp))
                 .all()
             )
 
+            logger.debug(f"Query returned {len(results)} day(s) with spending data")
+
             spending_map = {row.day: float(row.total) for row in results}
 
-            return [(d.strftime("%Y-%m-%d"), spending_map.get(d.strftime("%Y-%m-%d"), 0.0)) for d in sorted(date_list)]
+            daily_spending = [
+                (d.strftime("%Y-%m-%d"), spending_map.get(d.strftime("%Y-%m-%d"), 0.0))
+                for d in sorted(date_list)
+            ]
+            logger.debug(f"Processed daily spending data for {len(daily_spending)} day(s)")
+            return daily_spending
         except Exception as e:
+            logger.error(f"Failed to get daily spending for last {days} days: {e}")
             raise DatabaseError(f"Failed to get daily spending: {e}")

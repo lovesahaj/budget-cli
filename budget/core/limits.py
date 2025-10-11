@@ -4,13 +4,16 @@ This module provides functionality for setting, retrieving, and checking
 spending limits across different time periods, categories, and payment sources.
 """
 
-from typing import Dict, List, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 
-from budget.exceptions import DatabaseError, ValidationError
-from budget.models import SpendingLimit, Transaction
+from loguru import logger
+from sqlalchemy import and_, func
+from sqlalchemy.orm import Session
+
+from budget.domain.exceptions import DatabaseError, ValidationError
+from budget.domain.models import SpendingLimit, Transaction
+
 
 class LimitManager:
     """Manages spending limits and monitors spending against those limits.
@@ -37,6 +40,7 @@ class LimitManager:
         Args:
             session: SQLAlchemy database session for database operations.
         """
+        logger.debug("Initializing LimitManager with session: {}", session)
         self.session = session
 
     def set_spending_limit(
@@ -74,21 +78,49 @@ class LimitManager:
             >>> # Daily overall spending limit
             >>> limit_mgr.set_spending_limit(50.0, "daily")
         """
+        logger.info(
+            "Setting spending limit: amount={}, period={}, category={}, source={}",
+            limit_amount,
+            period,
+            category,
+            source,
+        )
         try:
             if limit_amount <= 0:
+                logger.warning(
+                    "Validation failed: limit_amount ({}) must be positive", limit_amount
+                )
                 raise ValidationError("Limit amount must be positive")
             if period not in ["daily", "weekly", "monthly", "yearly"]:
+                logger.warning(
+                    "Validation failed: invalid period '{}', must be daily/weekly/monthly/yearly",
+                    period,
+                )
                 raise ValidationError(
                     "Period must be daily, weekly, monthly, or yearly"
                 )
 
-            limit = self.session.query(SpendingLimit).filter_by(
-                category=category, source=source, period=period
-            ).first()
+            limit = (
+                self.session.query(SpendingLimit)
+                .filter_by(category=category, source=source, period=period)
+                .first()
+            )
 
             if limit:
+                logger.debug(
+                    "Updating existing limit: id={}, old_amount={}, new_amount={}",
+                    limit.id,
+                    limit.limit_amount,
+                    limit_amount,
+                )
                 limit.limit_amount = float(limit_amount)
             else:
+                logger.debug(
+                    "Creating new spending limit for period={}, category={}, source={}",
+                    period,
+                    category,
+                    source,
+                )
                 limit = SpendingLimit(
                     category=category,
                     source=source,
@@ -96,13 +128,21 @@ class LimitManager:
                     period=period,
                 )
                 self.session.add(limit)
-            self.session.commit()
+            self.session.flush()
+            logger.info(
+                "Successfully set spending limit: period={}, category={}, source={}, amount={}",
+                period,
+                category,
+                source,
+                limit_amount,
+            )
             return True
         except ValidationError:
             self.session.rollback()
             raise
         except Exception as e:
             self.session.rollback()
+            logger.error("Failed to set spending limit: {}", e)
             raise DatabaseError(f"Failed to set spending limit: {e}")
 
     def get_spending_limits(self) -> List[SpendingLimit]:
@@ -120,9 +160,19 @@ class LimitManager:
             >>> for limit in limits:
             ...     print(f"{limit.period} {limit.category}: ${limit.limit_amount}")
         """
+        logger.debug("Retrieving all spending limits")
         try:
-            return self.session.query(SpendingLimit).order_by(SpendingLimit.period, SpendingLimit.category, SpendingLimit.source).all()
+            limits = (
+                self.session.query(SpendingLimit)
+                .order_by(
+                    SpendingLimit.period, SpendingLimit.category, SpendingLimit.source
+                )
+                .all()
+            )
+            logger.info("Retrieved {} spending limit(s)", len(limits))
+            return limits
         except Exception as e:
+            logger.error("Failed to get spending limits: {}", e)
             raise DatabaseError(f"Failed to get spending limits: {e}")
 
     def check_spending_limit(
@@ -163,12 +213,26 @@ class LimitManager:
             >>> elif status:
             ...     print(f"{status['percentage']:.1f}% of budget used")
         """
+        logger.debug(
+            "Checking spending limit: category={}, source={}, period={}",
+            category,
+            source,
+            period,
+        )
         try:
-            limit = self.session.query(SpendingLimit).filter_by(
-                category=category, source=source, period=period
-            ).first()
+            limit = (
+                self.session.query(SpendingLimit)
+                .filter_by(category=category, source=source, period=period)
+                .first()
+            )
 
             if not limit:
+                logger.debug(
+                    "No spending limit found for category={}, source={}, period={}",
+                    category,
+                    source,
+                    period,
+                )
                 return None
 
             limit_amount = limit.limit_amount
@@ -176,16 +240,28 @@ class LimitManager:
             today = datetime.utcnow().date()
             if period == "monthly":
                 start_date = datetime.combine(today.replace(day=1), datetime.min.time())
-                end_date = datetime.combine((start_date.date() + timedelta(days=32)).replace(day=1) - timedelta(days=1), datetime.max.time())
+                end_date = datetime.combine(
+                    (start_date.date() + timedelta(days=32)).replace(day=1)
+                    - timedelta(days=1),
+                    datetime.max.time(),
+                )
             elif period == "weekly":
-                start_date = datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
-                end_date = datetime.combine(start_date.date() + timedelta(days=6), datetime.max.time())
+                start_date = datetime.combine(
+                    today - timedelta(days=today.weekday()), datetime.min.time()
+                )
+                end_date = datetime.combine(
+                    start_date.date() + timedelta(days=6), datetime.max.time()
+                )
             elif period == "daily":
                 start_date = datetime.combine(today, datetime.min.time())
                 end_date = datetime.combine(today, datetime.max.time())
             elif period == "yearly":
-                start_date = datetime.combine(today.replace(month=1, day=1), datetime.min.time())
-                end_date = datetime.combine(today.replace(month=12, day=31), datetime.max.time())
+                start_date = datetime.combine(
+                    today.replace(month=1, day=1), datetime.min.time()
+                )
+                end_date = datetime.combine(
+                    today.replace(month=12, day=31), datetime.max.time()
+                )
             else:
                 return None
 
@@ -198,13 +274,13 @@ class LimitManager:
 
             if source:
                 if source == "cash":
-                    q = q.filter(Transaction.type == 'cash')
+                    q = q.filter(Transaction.type == "cash")
                 else:
                     q = q.filter(Transaction.card == source)
 
             current_spending = q.scalar() or 0
 
-            return {
+            result = {
                 "limit": limit_amount,
                 "spent": current_spending,
                 "remaining": limit_amount - current_spending,
@@ -213,5 +289,32 @@ class LimitManager:
                 else 0,
                 "exceeded": current_spending > limit_amount,
             }
+
+            if result["exceeded"]:
+                logger.warning(
+                    "Spending limit EXCEEDED: category={}, source={}, period={}, "
+                    "limit={:.2f}, spent={:.2f}, over_by={:.2f}",
+                    category,
+                    source,
+                    period,
+                    limit_amount,
+                    current_spending,
+                    current_spending - limit_amount,
+                )
+            else:
+                logger.info(
+                    "Spending limit check: category={}, source={}, period={}, "
+                    "limit={:.2f}, spent={:.2f}, remaining={:.2f}, percentage={:.1f}%",
+                    category,
+                    source,
+                    period,
+                    limit_amount,
+                    current_spending,
+                    result["remaining"],
+                    result["percentage"],
+                )
+
+            return result
         except Exception as e:
+            logger.error("Failed to check spending limit: {}", e)
             raise DatabaseError(f"Failed to check spending limit: {e}")

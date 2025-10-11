@@ -2,8 +2,8 @@
 
 import pytest
 
-from budget.exceptions import ValidationError
-from budget.models import Category
+from budget.domain.exceptions import ValidationError
+from budget.domain.models import Category
 
 
 def test_add_category(category_manager):

@@ -2,8 +2,8 @@
 
 import pytest
 
-from budget.exceptions import ValidationError
-from budget.models import SpendingLimit
+from budget.domain.exceptions import ValidationError
+from budget.domain.models import SpendingLimit
 
 
 def test_set_spending_limit(limit_manager):

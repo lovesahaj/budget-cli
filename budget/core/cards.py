@@ -7,11 +7,12 @@ ensuring associated balance accounts are created.
 
 from typing import List
 
+from loguru import logger
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .exceptions import DatabaseError, ValidationError
-from .models import Balance, Card
+from budget.domain.exceptions import DatabaseError, ValidationError
+from budget.domain.models import Balance, Card
 
 
 class CardManager:
@@ -38,6 +39,7 @@ class CardManager:
         Args:
             session: SQLAlchemy database session for database operations.
         """
+        logger.debug("Initializing CardManager")
         self.session = session
         self.cards: List[str] = []
 
@@ -58,31 +60,40 @@ class CardManager:
             >>> cards = card_manager.load_cards()
             >>> print(cards)  # ['ICICI', 'Wise']
         """
+        logger.info("Loading cards from database")
         try:
             self.cards = [
                 card.name for card in self.session.query(Card).order_by(Card.name).all()
             ]
+            logger.debug(f"Found {len(self.cards)} existing cards: {self.cards}")
 
             # Ensure cash balance exists
             cash_balance = Balance(type="cash", amount=0.0)
             self.session.merge(cash_balance)
+            logger.debug("Ensured cash balance exists")
 
             if not self.cards:
+                logger.info("No cards found, creating default cards")
                 default_cards = ["Wise", "ICICI"]
                 for card_name in default_cards:
+                    logger.debug(f"Creating default card: {card_name}")
                     new_card = Card(name=card_name)
                     self.session.add(new_card)
                     new_balance = Balance(type=card_name, amount=0.0)
                     self.session.merge(new_balance)
-                self.session.commit()
+                self.session.flush()
                 self.cards = default_cards
+                logger.info(f"Created default cards: {default_cards}")
             else:
+                logger.debug("Ensuring balance accounts exist for all cards")
                 for card_name in self.cards:
                     new_balance = Balance(type=card_name, amount=0.0)
                     self.session.merge(new_balance)
-                self.session.commit()
+                self.session.flush()
+                logger.info(f"Successfully loaded {len(self.cards)} cards")
             return self.cards
         except Exception as e:
+            logger.error(f"Failed to load cards: {e}")
             self.session.rollback()
             raise DatabaseError(f"Failed to load cards: {e}")
 
@@ -108,26 +119,32 @@ class CardManager:
             >>> if success:
             ...     print("Card added successfully")
         """
+        logger.info(f"Attempting to add new card: {name}")
         try:
             if not name or not name.strip():
+                logger.warning("Attempted to add card with empty name")
                 raise ValidationError("Card name cannot be empty")
             if name.strip() in self.cards:
+                logger.warning(f"Card '{name.strip()}' already exists")
                 return False
 
+            logger.debug(f"Creating new card: {name.strip()}")
             new_card = Card(name=name.strip())
             self.session.add(new_card)
             new_balance = Balance(type=name.strip(), amount=0.0)
             self.session.merge(new_balance)
-            self.session.commit()
+            self.session.flush()
             self.cards.append(name.strip())
+            logger.success(f"Successfully added card: {name.strip()}")
             return True
-        except IntegrityError:
+        except IntegrityError as e:
+            logger.error(f"Integrity error when adding card '{name}': {e}")
             self.session.rollback()
             return False
         except ValidationError:
             self.session.rollback()
             raise
         except Exception as e:
+            logger.error(f"Failed to add card '{name}': {e}")
             self.session.rollback()
             raise DatabaseError(f"Failed to add card: {e}")
-

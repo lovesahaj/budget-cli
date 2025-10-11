@@ -2,8 +2,8 @@
 
 import pytest
 
-from budget.exceptions import DatabaseError, ValidationError
-from budget.models import Transaction
+from budget.domain.exceptions import DatabaseError, ValidationError
+from budget.domain.models import Transaction
 
 
 def test_add_transaction_cash(transaction_manager):
@@ -244,6 +244,7 @@ def test_search_transactions_multiple_filters(transaction_manager, sample_transa
 
     assert len(transactions) == 1
     assert all(t.category == "Food" and t.amount >= 20.00 for t in transactions)
+
 
 def test_search_transactions_no_results(transaction_manager, sample_transactions):
     """Test searching with no matching results."""
