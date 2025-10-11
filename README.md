@@ -4,17 +4,17 @@ A simple personal budget tracking application for managing daily transactions, a
 
 ## Features
 
-- **Transaction Management**: Track income and expenses with categories
-- **Balance Tracking**: Monitor account balances (cash, cards)
-- **Spending Limits**: Set and check spending limits by category or source
-- **Reports**: View spending by category and daily trends
-- **Simple CLI**: Easy-to-use command-line interface
+- **Transaction Management**: Track income and expenses with categories.
+- **Balance Tracking**: Monitor account balances (cash, cards).
+- **Spending Limits**: Set and check spending limits by category or source.
+- **Reports**: View spending by category and daily trends.
+- **Simple CLI**: Easy-to-use command-line interface.
 - **Auto-Import** (NEW): Automatically import transactions from:
   - **PDF files** (bank statements, credit card statements, receipts)
   - **Images** (photos of receipts using OCR or direct multimodal analysis)
   - **Email** (Gmail/Outlook - scans for transaction emails)
-- **Smart Deduplication**: Automatically detects and prevents duplicate transactions
-- **Multimodal Support**: Direct image analysis with Gemma 3 (no OCR needed, 896x896 normalized)
+- **Smart Deduplication**: Automatically detects and prevents duplicate transactions.
+- **Multimodal Support**: Direct image analysis with Gemma 3 (no OCR needed, 896x896 normalized).
 
 ## Installation
 
@@ -37,6 +37,8 @@ uv pip install -e ".[imports]"
 # Or with pip
 pip install -e ".[imports]"
 ```
+
+After installation, the `budget` command will be available in your shell.
 
 ### Auto-Import Setup
 
@@ -256,73 +258,3 @@ pytest --cov=budget
 # Run specific test file
 pytest tests/test_budget.py -v
 ```
-
-### Dependencies
-
-**Core:**
-
-- **sqlalchemy** (>=2.0.0): Database ORM
-- **click** (>=8.0.0): CLI framework
-
-**Auto-Import** (optional):
-
-- **anthropic** (>=0.18.0): Claude API for LLM-based extraction
-- **openai** (>=1.0.0): OpenAI-compatible client for local LLM (LM Studio)
-- **pdfplumber** (>=0.10.0): PDF text extraction
-- **pytesseract** (>=0.3.10): OCR for images
-- **Pillow** (>=10.0.0): Image processing
-
-**Development:**
-
-- **pytest** (>=8.0.0): Testing framework
-- **pytest-cov** (>=4.1.0): Coverage reporting
-
-## Examples
-
-### Track Daily Expenses
-
-```python
-from budget import Budget
-
-budget = Budget()
-
-# Set up categories
-budget.add_category("Food", "Meals and groceries")
-budget.add_category("Transport", "Bus, taxi, etc.")
-budget.add_category("Entertainment", "Movies, games, etc.")
-
-# Add today's transactions
-budget.add_transaction("cash", "Morning coffee", 5.50, category="Food")
-budget.add_transaction("card", "Lunch", 12.00, card="Visa", category="Food")
-budget.add_transaction("cash", "Bus fare", 2.50, category="Transport")
-
-# Check today's spending
-from datetime import datetime
-now = datetime.now()
-spending = budget.get_spending_by_category(now.year, now.month)
-total = sum(spending.values())
-print(f"Total spent this month: ${total:.2f}")
-```
-
-### Set Monthly Budget
-
-```python
-from budget import Budget
-
-budget = Budget()
-
-# Set monthly limits
-budget.set_spending_limit(500.0, period="monthly", category="Food")
-budget.set_spending_limit(100.0, period="monthly", category="Transport")
-
-# Check if you're within budget
-result = budget.check_spending_limit(category="Food", period="monthly")
-if result["exceeded"]:
-    print(f"Over budget by ${abs(result['remaining']):.2f}!")
-else:
-    print(f"${result['remaining']:.2f} remaining")
-```
-
-## License
-
-MIT License
