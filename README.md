@@ -1,6 +1,6 @@
 # Budget Tracker MCP Server
 
-<img width="1073" height="871" alt="SCR-20251011-nqjj" src="https://github.com/user-attachments/assets/8812a3d1-cd5d-4612-8be4-de168573bc47" />
+<img width="740" height="600" alt="SCR-20251011-nqjj" src="https://github.com/user-attachments/assets/8812a3d1-cd5d-4612-8be4-de168573bc47" />
 
 A personal budget tracking MCP (Model Context Protocol) server for Claude Desktop. Manage daily transactions, account balances, and spending limits directly through conversation with Claude.
 
