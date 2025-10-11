@@ -1,25 +1,39 @@
 [project]
 name = "budget"
-version = "0.1.0"
-description = "Personal Budget Tracker - A gRPC-based application for tracking daily transactions, account balances, spending limits, and financial analytics"
+version = "0.3.1"
+description = "Personal Budget Tracker - Expense tracking with auto-import from PDF, images (OCR/multimodal), and email"
 requires-python = ">=3.13"
 dependencies = [
     "sqlalchemy>=2.0.0",
-    "grpcio>=1.60.0",
-    "grpcio-tools>=1.60.0",
-    "protobuf>=4.25.0",
-    "loguru>=0.7.0",
+    "click>=8.0.0",
+    "pdfplumber>=0.11.7",
+    "pytesseract>=0.3.13",
+    "anthropic>=0.69.0",
+    "openai>=2.3.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
-    "pytest-mock>=3.12.0",
+]
+
+# Import features (optional)
+imports = [
+    "anthropic>=0.18.0",  # LLM-based transaction extraction (Anthropic)
+    "openai>=1.0.0",  # OpenAI-compatible client for local LLM (LM Studio)
+    "pdfplumber>=0.10.0",  # PDF text extraction
+    "pytesseract>=0.3.10",  # OCR for images
+    "Pillow>=10.0.0",  # Image processing
+]
+
+# All optional features
+all = [
+    "budget[imports]",
 ]
 
 [project.scripts]
-budget-grpc-server = "budget.grpc_server:serve"
+budget = "budget.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

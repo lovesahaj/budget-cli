@@ -32,3 +32,9 @@ clean:
 format:
     uv run isort .
     uv run ruff format --line-length 88 .
+
+
+sick:
+    export ANTHROPIC_API_KEY="anthropic_key" && \
+      uv run budget import pdf /Users/lovess/Downloads/account-statement_2025-09-01_2025-10-11_en-gb_8d49ed.pdf --provider local --model google/gemma-3n-e4b
+      
