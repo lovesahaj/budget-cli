@@ -1,0 +1,12 @@
+services:
+  budget-mcp:
+    build: .
+    container_name: budget-mcp-server
+    stdin_open: true
+    tty: true
+    volumes:
+      - budget-data:/data
+    restart: unless-stopped
+
+volumes:
+  budget-data:

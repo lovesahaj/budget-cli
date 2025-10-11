@@ -1,11 +1,10 @@
 [project]
 name = "budget"
-version = "0.3.1"
-description = "Personal Budget Tracker - Expense tracking with auto-import from PDF, images (OCR/multimodal), and email"
+version = "0.4.0"
+description = "Personal Budget Tracker MCP Server - Expense tracking with auto-import from PDF, images (OCR/multimodal), and email"
 requires-python = ">=3.13"
 dependencies = [
     "sqlalchemy>=2.0.0",
-    "click>=8.0.0",
     "pdfplumber>=0.11.7",
     "pytesseract>=0.3.13",
     "anthropic>=0.69.0",
@@ -34,7 +33,6 @@ all = [
 ]
 
 [project.scripts]
-budget = "budget.cli:main"
 budget-mcp = "budget.mcp_server:main"
 
 [tool.pytest.ini_options]

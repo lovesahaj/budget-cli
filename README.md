@@ -1,20 +1,22 @@
-# Budget Tracker
+# Budget Tracker MCP Server
 
-A simple personal budget tracking application for managing daily transactions, account balances, and spending limits.
+A personal budget tracking MCP (Model Context Protocol) server for Claude Desktop. Manage daily transactions, account balances, and spending limits directly through conversation with Claude.
 
 ## Features
 
-- **Transaction Management**: Track income and expenses with categories.
-- **Balance Tracking**: Monitor account balances (cash, cards).
-- **Spending Limits**: Set and check spending limits by category or source.
-- **Reports**: View spending by category and daily trends.
-- **Simple CLI**: Easy-to-use command-line interface.
-- **Auto-Import** (NEW): Automatically import transactions from:
+- **MCP Server Integration**: Use with Claude Desktop for natural conversation-based budget tracking
+- **Transaction Management**: Track income and expenses with categories
+- **Bulk Transaction Import**: Add multiple transactions at once
+- **Balance Tracking**: Monitor account balances (cash, cards)
+- **Spending Limits**: Set and check spending limits by category or source
+- **Reports**: View spending by category and daily trends
+- **Auto-Import**: Automatically import transactions from:
   - **PDF files** (bank statements, credit card statements, receipts)
   - **Images** (photos of receipts using OCR or direct multimodal analysis)
   - **Email** (Gmail/Outlook - scans for transaction emails)
-- **Smart Deduplication**: Automatically detects and prevents duplicate transactions.
-- **Multimodal Support**: Direct image analysis with Gemma 3 (no OCR needed, 896x896 normalized).
+- **Smart Deduplication**: Automatically detects and prevents duplicate transactions
+- **Multimodal Support**: Direct image analysis with Gemma 3 (no OCR needed, 896x896 normalized)
+- **Python API**: Programmatic access for advanced use cases
 
 ## Installation
 
@@ -22,11 +24,13 @@ A simple personal budget tracking application for managing daily transactions, a
 
 - Python >= 3.13
 - [uv](https://docs.astral.sh/uv/) package manager (recommended) or pip
+- [Claude Desktop](https://claude.ai/download) (for MCP server integration)
+- Docker (optional, for containerized deployment)
 
 ### Quick Start
 
 ```bash
-# Install basic dependencies
+# Install dependencies
 uv sync
 
 # Or with pip
@@ -37,8 +41,6 @@ uv pip install -e ".[imports]"
 # Or with pip
 pip install -e ".[imports]"
 ```
-
-After installation, the `budget` command will be available in your shell.
 
 ### Auto-Import Setup
 
@@ -85,56 +87,185 @@ To use the auto-import features, you'll need:
 
 ## Usage
 
-### Command Line Interface
+### MCP Server
+
+The MCP (Model Context Protocol) server allows you to use the budget tracker with Claude Desktop and other MCP clients.
+
+#### Running with Docker
+
+The easiest way to run the MCP server is with Docker.
 
 ```bash
-# Add a transaction
-budget add cash "Coffee" 5.50 --category Food
-budget add card "Lunch" 12.50 --card Visa --category Food
+# Build and start the server in the background
+docker-compose up -d
 
-# List recent transactions
-budget list
-budget list --limit 20
-budget list --category Food
-
-# Add a category
-budget category add Food "Food and dining"
-budget category list
-
-# Check/set balances
-budget balance show
-budget balance set cash 100.0
-
-# Set spending limits
-budget limit set 500 --period monthly --category Food
-budget limit check --category Food
-
-# View reports
-budget report daily --days 7
-budget report category --month 10
-
-# Auto-import from PDF (bank statement, credit card statement)
-budget import pdf statement.pdf
-budget import pdf statements/ --context "credit card statement"
-
-# Auto-import from images (receipts)
-budget import image receipt.jpg
-budget import image receipts/ --context "store receipt"
-
-# Auto-import from Gmail
-budget import email --email your@gmail.com --provider gmail --days 30
-
-# Use local LLM (LM Studio) instead of Anthropic
-budget import pdf statement.pdf --provider local
-budget import image receipt.jpg --provider local --base-url http://localhost:1234/v1
-budget import email --email your@gmail.com --llm-provider local --model "llama-3.1-8b"
-
-# Use Gemma 3 multimodal for direct image analysis (no OCR needed)
-budget import image receipt.jpg --provider local --model "gemma-3-12b"
-
-# Disable multimodal and use OCR instead
-budget import image receipt.jpg --provider local --no-multimodal
+# Check that the container is running
+docker ps
 ```
+
+The MCP server uses stdio for communication (not HTTP), so it doesn't expose a web interface.
+
+#### Usage with Claude Desktop
+
+To use this MCP server with Claude Desktop, you can run it either locally or with Docker.
+
+##### With Local Development Server
+
+This method is recommended for development.
+
+**macOS/Linux**
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "budget-tracker": {
+      "command": "/Users/lovess/.local/bin/uv",
+      "args": ["--directory", "/Users/lovess/Documents/budget", "run", "budget-mcp"],
+      "env": {
+        "BUDGET_DB_NAME": "budget.db"
+      }
+    }
+  }
+}
+```
+
+**Note:** If `uv` is installed in a different location on your system, use `which uv` to find the full path and update the `command` field accordingly.
+
+**Windows**
+
+Edit `%APPDATA%\Claude\claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "budget-tracker": {
+      "command": "C:\\Users\\YourUsername\\.local\\bin\\uv.exe",
+      "args": ["--directory", "C:\\path\\to\\budget", "run", "budget-mcp"],
+      "env": {
+        "BUDGET_DB_NAME": "budget.db"
+      }
+    }
+  }
+}
+```
+
+**Important:**
+
+- Replace `C:\\path\\to\\budget` with the actual absolute path to your budget project directory
+- Find your `uv.exe` location using `where uv` in PowerShell and update the `command` field accordingly.
+
+##### With Docker
+
+This method is recommended for a more stable setup.
+
+1.  **Start the server:**
+
+    ```bash
+    docker-compose up -d
+    ```
+
+2.  **Configure Claude Desktop:**
+
+    The `command` for Claude Desktop will use `docker exec` to run the `budget-mcp` command inside the running container.
+
+    **macOS/Linux**
+
+    ```json
+    {
+      "mcpServers": {
+        "budget-tracker": {
+          "command": "docker",
+          "args": ["exec", "-i", "budget-mcp-server", "uv", "run", "budget-mcp"],
+          "env": {}
+        }
+      }
+    }
+    ```
+
+    **Windows**
+
+    ```json
+    {
+      "mcpServers": {
+        "budget-tracker": {
+          "command": "docker.exe",
+          "args": ["exec", "-i", "budget-mcp-server", "uv", "run", "budget-mcp"],
+          "env": {}
+        }
+      }
+    }
+    ```
+
+    **Note:** The container name `budget-mcp-server` is set in the `docker-compose.yml` file. If you rename the container, update this configuration accordingly.
+
+#### Using with Claude Desktop
+
+Once configured, you can interact with your budget tracker naturally through Claude. Here are some example interactions:
+
+**Adding Transactions:**
+```
+Add a coffee purchase for $5.50 in cash, category Food
+```
+
+**Bulk Import:**
+```
+Add these transactions:
+- Lunch at McDonald's for $12.50 (Visa card, Food)
+- Gas for $45.00 (Mastercard, Transportation)
+- Groceries for $85.30 (cash, Food)
+```
+
+**Viewing and Searching:**
+```
+Show me my recent transactions
+Search for all food transactions over $20 this month
+```
+
+**Balances and Reports:**
+```
+What are my current balances?
+Show me spending by category for this month
+Show daily spending for the last 7 days
+```
+
+**Spending Limits:**
+```
+Set a monthly spending limit of $500 for Food
+Check my spending limit for Food this month
+```
+
+#### Available Tools
+
+The MCP server exposes the following tools:
+
+**Transaction Tools:**
+- `add_transaction` - Add a single transaction
+- `add_multiple_transactions` - Add multiple transactions at once (bulk import)
+- `list_transactions` - List recent transactions with filters
+- `search_transactions` - Advanced search with date range and amount filters
+- `update_transaction` - Update an existing transaction
+- `delete_transaction` - Delete a transaction
+
+**Category & Card Tools:**
+- `add_category` - Add a new category
+- `list_categories` - List all categories
+- `add_card` - Add a new payment card
+- `list_cards` - List all cards
+
+**Balance Tools:**
+- `get_balance` - Get balance for a specific account
+- `get_all_balances` - Get all balances
+- `update_balance` - Update an account balance
+
+**Spending Limit Tools:**
+- `set_spending_limit` - Set spending limits by period/category/source
+- `check_spending_limit` - Check spending against limits
+
+**Report Tools:**
+- `get_daily_spending` - Get daily spending report
+- `get_spending_by_category` - Get spending breakdown by category
 
 ### Python API
 
@@ -217,8 +348,12 @@ email_importer.disconnect()
 budget/
 ├── budget.py         # Main Budget class with all functionality
 ├── models.py         # SQLAlchemy database models
-├── cli.py            # Command-line interface
+├── mcp_server.py     # MCP server entry point
 ├── utils.py          # Utility functions (hashing, deduplication)
+├── mcp/              # MCP server modules
+│   ├── __init__.py
+│   ├── tools.py      # Tool definitions organized by category
+│   └── handlers.py   # Tool handlers organized by domain
 ├── importers/        # Auto-import modules
 │   ├── __init__.py
 │   ├── llm.py        # LLM-based transaction extraction (Anthropic)
@@ -230,6 +365,11 @@ budget/
 
 tests/
 └── test_budget.py    # All tests
+
+docker/
+├── Dockerfile        # Container image definition
+├── docker-compose.yml # Container orchestration
+└── entrypoint.sh     # Container startup script
 
 pyproject.toml        # Project configuration
 README.md            # This file
@@ -258,3 +398,4 @@ pytest --cov=budget
 # Run specific test file
 pytest tests/test_budget.py -v
 ```
+
