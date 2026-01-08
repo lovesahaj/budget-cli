@@ -8,7 +8,7 @@ def get_transaction_tools() -> list[Tool]:
     return [
         Tool(
             name="add_transaction",
-            description="Add a single transaction (expense) to the budget",
+            description="Add a single transaction to the budget (income or expense)",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -25,6 +25,11 @@ def get_transaction_tools() -> list[Tool]:
                         "type": "number",
                         "description": "Transaction amount (must be positive)",
                     },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["income", "expense"],
+                        "description": "Transaction direction - income or expense",
+                    },
                     "card": {
                         "type": "string",
                         "description": "Card name (for card transactions)",
@@ -33,8 +38,20 @@ def get_transaction_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Transaction category",
                     },
+                    "datetime": {
+                        "type": "string",
+                        "description": "Transaction date and time in ISO format (YYYY-MM-DD HH:MM:SS or YYYY-MM-DDTHH:MM:SS). Defaults to current datetime if not specified.",
+                    },
+                    "merchant": {
+                        "type": "string",
+                        "description": "Merchant or vendor name",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "User notes or memos about the transaction",
+                    },
                 },
-                "required": ["type", "description", "amount"],
+                "required": ["type", "description", "amount", "direction"],
             },
         ),
         Tool(
@@ -62,6 +79,11 @@ def get_transaction_tools() -> list[Tool]:
                                     "type": "number",
                                     "description": "Transaction amount (must be positive)",
                                 },
+                                "direction": {
+                                    "type": "string",
+                                    "enum": ["income", "expense"],
+                                    "description": "Transaction direction - income or expense",
+                                },
                                 "card": {
                                     "type": "string",
                                     "description": "Card name (for card transactions)",
@@ -70,8 +92,20 @@ def get_transaction_tools() -> list[Tool]:
                                     "type": "string",
                                     "description": "Transaction category",
                                 },
+                                "datetime": {
+                                    "type": "string",
+                                    "description": "Transaction date and time in ISO format (YYYY-MM-DD HH:MM:SS or YYYY-MM-DDTHH:MM:SS). Defaults to current datetime if not specified.",
+                                },
+                                "merchant": {
+                                    "type": "string",
+                                    "description": "Merchant or vendor name",
+                                },
+                                "notes": {
+                                    "type": "string",
+                                    "description": "User notes or memos about the transaction",
+                                },
                             },
-                            "required": ["type", "description", "amount"],
+                            "required": ["type", "description", "amount", "direction"],
                         },
                     },
                 },
@@ -100,6 +134,11 @@ def get_transaction_tools() -> list[Tool]:
                     "card": {
                         "type": "string",
                         "description": "Filter by card name",
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["income", "expense"],
+                        "description": "Filter by transaction direction",
                     },
                 },
             },
@@ -138,6 +177,11 @@ def get_transaction_tools() -> list[Tool]:
                         "type": "number",
                         "description": "Maximum amount",
                     },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["income", "expense"],
+                        "description": "Filter by transaction direction",
+                    },
                 },
             },
         ),
@@ -172,6 +216,19 @@ def get_transaction_tools() -> list[Tool]:
                         "type": "string",
                         "description": "New category",
                     },
+                    "merchant": {
+                        "type": "string",
+                        "description": "New merchant name",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "New notes",
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["income", "expense"],
+                        "description": "New direction",
+                    },
                 },
                 "required": ["transaction_id"],
             },
@@ -188,6 +245,89 @@ def get_transaction_tools() -> list[Tool]:
                     },
                 },
                 "required": ["transaction_id"],
+            },
+        ),
+        Tool(
+            name="bulk_update_transactions",
+            description="Update multiple transactions at once with the same values",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "transaction_ids": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "List of transaction IDs to update",
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["cash", "card"],
+                        "description": "New transaction type",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "New description",
+                    },
+                    "amount": {
+                        "type": "number",
+                        "description": "New amount",
+                    },
+                    "card": {
+                        "type": "string",
+                        "description": "New card name",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "New category",
+                    },
+                    "merchant": {
+                        "type": "string",
+                        "description": "New merchant name",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "New notes",
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["income", "expense"],
+                        "description": "New direction",
+                    },
+                },
+                "required": ["transaction_ids"],
+            },
+        ),
+        Tool(
+            name="bulk_delete_transactions",
+            description="Delete multiple transactions at once",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "transaction_ids": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "List of transaction IDs to delete",
+                    },
+                },
+                "required": ["transaction_ids"],
+            },
+        ),
+        Tool(
+            name="bulk_categorize_transactions",
+            description="Apply the same category to multiple transactions at once",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "transaction_ids": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "List of transaction IDs to categorize",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Category to apply to all transactions",
+                    },
+                },
+                "required": ["transaction_ids", "category"],
             },
         ),
     ]
@@ -360,8 +500,8 @@ def get_report_tools() -> list[Tool]:
     """Get reporting tools."""
     return [
         Tool(
-            name="get_daily_spending",
-            description="Get daily spending for the last N days",
+            name="get_daily_cashflow",
+            description="Get daily income, expenses, and net cashflow for the last N days",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -375,7 +515,7 @@ def get_report_tools() -> list[Tool]:
         ),
         Tool(
             name="get_spending_by_category",
-            description="Get spending breakdown by category for a specific month",
+            description="Get income and expense breakdown by category for a specific month",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -386,6 +526,40 @@ def get_report_tools() -> list[Tool]:
                     "month": {
                         "type": "number",
                         "description": "Month 1-12 (defaults to current month)",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="get_financial_summary",
+            description="Get income, expense, and net totals for a date range",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "start_date": {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="get_income_by_category",
+            description="Get income breakdown by category for a specific month",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "year": {
+                        "type": "number",
+                        "description": "Year",
+                    },
+                    "month": {
+                        "type": "number",
+                        "description": "Month",
                     },
                 },
             },

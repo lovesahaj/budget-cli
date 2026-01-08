@@ -30,11 +30,16 @@ class Transaction(Base):
     __tablename__ = "transactions"
     id = Column(Integer, primary_key=True, autoincrement=True)
     type = Column(String, nullable=False)  # "cash" or "card"
+    direction = Column(String, nullable=False)  # "income" or "expense"
     card = Column(String)
     category = Column(String)
     description = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=func.now())
+
+    # Additional fields
+    merchant = Column(String)  # Merchant/vendor name
+    notes = Column(String)  # User notes/memos
 
     # Deduplication and import tracking
     hash = Column(String, unique=True, index=True)  # SHA256 hash for deduplication

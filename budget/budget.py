@@ -25,6 +25,7 @@ class Budget:
         self.engine = create_engine(f"sqlite:///{self.db_name}")
         self.Session = sessionmaker(bind=self.engine)
         self._init_db()
+        self._migrate_db()
 
     def _init_db(self):
         """Initialize database tables."""
@@ -32,14 +33,49 @@ class Budget:
 
         Base.metadata.create_all(self.engine)
 
+    def _migrate_db(self):
+        """Migrate database schema if needed."""
+        from sqlalchemy import text
+
+        with self.engine.connect() as conn:
+            # Check for missing columns in transactions table
+            result = conn.execute(text("PRAGMA table_info(transactions)"))
+            columns = {row[1] for row in result.fetchall()}
+
+            # Add direction column if missing
+            if "direction" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE transactions ADD COLUMN direction VARCHAR NOT NULL DEFAULT 'expense'"
+                    )
+                )
+
+            # Add import_source column if missing
+            if "import_source" not in columns:
+                conn.execute(
+                    text("ALTER TABLE transactions ADD COLUMN import_source VARCHAR")
+                )
+
+            # Add import_metadata column if missing
+            if "import_metadata" not in columns:
+                conn.execute(
+                    text("ALTER TABLE transactions ADD COLUMN import_metadata VARCHAR")
+                )
+            
+            conn.commit()
+
     # Transaction operations
     def add_transaction(
         self,
         type: str,
         description: str,
         amount: float,
+        direction: str,
         card: Optional[str] = None,
         category: Optional[str] = None,
+        timestamp: Optional[datetime] = None,
+        merchant: Optional[str] = None,
+        notes: Optional[str] = None,
     ) -> int:
         """Add a new transaction.
 
@@ -47,8 +83,12 @@ class Budget:
             type: "cash" or "card"
             description: Transaction description
             amount: Amount (must be positive)
+            direction: "income" or "expense"
             card: Card name (for card transactions)
             category: Optional category
+            timestamp: Transaction date and time (defaults to current datetime)
+            merchant: Merchant/vendor name
+            notes: User notes/memos
 
         Returns:
             Transaction ID
@@ -62,14 +102,23 @@ class Budget:
             raise ValueError("Amount must be positive")
         if type not in ["cash", "card"]:
             raise ValueError("Type must be 'cash' or 'card'")
+        if direction not in ["income", "expense"]:
+            raise ValueError("Direction must be 'income' or 'expense'")
+
+        if timestamp is None:
+            timestamp = datetime.now()
 
         with self.Session() as session:
             txn = Transaction(
                 type=type,
+                direction=direction,
                 card=card,
                 category=category,
                 description=description.strip(),
                 amount=float(amount),
+                timestamp=timestamp,
+                merchant=merchant,
+                notes=notes,
                 import_source="manual",
             )
             session.add(txn)
@@ -81,6 +130,7 @@ class Budget:
         type: str,
         description: str,
         amount: float,
+        direction: str = "expense",
         date: Optional[datetime] = None,
         card: Optional[str] = None,
         category: Optional[str] = None,
@@ -93,6 +143,7 @@ class Budget:
             type: "cash" or "card"
             description: Transaction description
             amount: Transaction amount
+            direction: "income" or "expense" (defaults to "expense")
             date: Transaction date (defaults to now)
             card: Card name (for card transactions)
             category: Optional category
@@ -108,12 +159,14 @@ class Budget:
             raise ValueError("Amount must be positive")
         if type not in ["cash", "card"]:
             raise ValueError("Type must be 'cash' or 'card'")
+        if direction not in ["income", "expense"]:
+            raise ValueError("Direction must be 'income' or 'expense'")
 
         if date is None:
             date = datetime.now()
 
-        # Generate hash for deduplication
-        txn_hash = generate_transaction_hash(date, amount, description, card)
+        # Generate hash for deduplication - include direction
+        txn_hash = generate_transaction_hash(date, amount, description, card, direction)
 
         with self.Session() as session:
             # Check if transaction already exists
@@ -124,6 +177,7 @@ class Budget:
             # Create new transaction
             txn = Transaction(
                 type=type,
+                direction=direction,
                 card=card,
                 category=category,
                 description=description.strip(),
@@ -156,6 +210,7 @@ class Budget:
                 - type: str
                 - description: str
                 - amount: float
+                - direction: str ("income" or "expense", defaults to "expense")
                 - date: datetime (optional)
                 - card: str (optional)
                 - category: str (optional)
@@ -183,6 +238,7 @@ class Budget:
                     type=txn_data.get("type", "card"),
                     description=txn_data["description"],
                     amount=txn_data["amount"],
+                    direction=txn_data.get("direction", "expense"),
                     date=txn_data.get("date"),
                     card=txn_data.get("card"),
                     category=txn_data.get("category"),
@@ -210,6 +266,9 @@ class Budget:
         description: Optional[str] = None,
         amount: Optional[float] = None,
         category: Optional[str] = None,
+        merchant: Optional[str] = None,
+        notes: Optional[str] = None,
+        direction: Optional[str] = None,
     ) -> bool:
         """Update an existing transaction.
 
@@ -220,6 +279,9 @@ class Budget:
             description: New description (optional)
             amount: New amount (optional)
             category: New category (optional)
+            merchant: New merchant (optional)
+            notes: New notes (optional)
+            direction: New direction (optional)
 
         Returns:
             True if updated, False if not found
@@ -246,6 +308,14 @@ class Budget:
                 txn.amount = float(amount)
             if category is not None:
                 txn.category = category
+            if merchant is not None:
+                txn.merchant = merchant
+            if notes is not None:
+                txn.notes = notes
+            if direction is not None:
+                if direction not in ["income", "expense"]:
+                    raise ValueError("Direction must be 'income' or 'expense'")
+                txn.direction = direction
 
             session.commit()
             return True
@@ -266,6 +336,130 @@ class Budget:
                 session.commit()
                 return True
             return False
+
+    def bulk_update_transactions(
+        self,
+        transaction_ids: List[int],
+        type: Optional[str] = None,
+        card: Optional[str] = None,
+        description: Optional[str] = None,
+        amount: Optional[float] = None,
+        category: Optional[str] = None,
+        merchant: Optional[str] = None,
+        notes: Optional[str] = None,
+        direction: Optional[str] = None,
+    ) -> Dict[str, int]:
+        """Update multiple transactions at once.
+
+        Args:
+            transaction_ids: List of transaction IDs to update
+            type: New type (optional)
+            card: New card (optional)
+            description: New description (optional)
+            amount: New amount (optional)
+            category: New category (optional)
+            merchant: New merchant (optional)
+            notes: New notes (optional)
+            direction: New direction (optional)
+
+        Returns:
+            Dict with counts: {"updated": int, "not_found": int}
+        """
+        results = {"updated": 0, "not_found": 0}
+
+        with self.Session() as session:
+            for txn_id in transaction_ids:
+                txn = session.query(Transaction).filter_by(id=txn_id).first()
+                if not txn:
+                    results["not_found"] += 1
+                    continue
+
+                try:
+                    if type is not None:
+                        if type not in ["cash", "card"]:
+                            raise ValueError("Type must be 'cash' or 'card'")
+                        txn.type = type
+                        if type == "cash":
+                            txn.card = None
+
+                    if card is not None and txn.type != "cash":
+                        txn.card = card
+                    if description is not None and description.strip():
+                        txn.description = description.strip()
+                    if amount is not None:
+                        if amount <= 0:
+                            raise ValueError("Amount must be positive")
+                        txn.amount = float(amount)
+                    if category is not None:
+                        txn.category = category
+                    if merchant is not None:
+                        txn.merchant = merchant
+                    if notes is not None:
+                        txn.notes = notes
+                    if direction is not None:
+                        if direction not in ["income", "expense"]:
+                            raise ValueError("Direction must be 'income' or 'expense'")
+                        txn.direction = direction
+
+                    results["updated"] += 1
+                except ValueError:
+                    results["not_found"] += 1
+                    continue
+
+            session.commit()
+
+        return results
+
+    def bulk_delete_transactions(self, transaction_ids: List[int]) -> Dict[str, int]:
+        """Delete multiple transactions at once.
+
+        Args:
+            transaction_ids: List of transaction IDs to delete
+
+        Returns:
+            Dict with counts: {"deleted": int, "not_found": int}
+        """
+        results = {"deleted": 0, "not_found": 0}
+
+        with self.Session() as session:
+            for txn_id in transaction_ids:
+                txn = session.query(Transaction).filter_by(id=txn_id).first()
+                if txn:
+                    session.delete(txn)
+                    results["deleted"] += 1
+                else:
+                    results["not_found"] += 1
+
+            session.commit()
+
+        return results
+
+    def bulk_categorize_transactions(
+        self, transaction_ids: List[int], category: str
+    ) -> Dict[str, int]:
+        """Categorize multiple transactions at once.
+
+        Args:
+            transaction_ids: List of transaction IDs to categorize
+            category: Category to apply
+
+        Returns:
+            Dict with counts: {"categorized": int, "not_found": int}
+        """
+        results = {"categorized": 0, "not_found": 0}
+
+        with self.Session() as session:
+            for txn_id in transaction_ids:
+                txn = session.query(Transaction).filter_by(id=txn_id).first()
+                if txn:
+                    txn.category = category
+                    results["categorized"] += 1
+                else:
+                    results["not_found"] += 1
+
+            session.commit()
+
+        return results
 
     def get_transaction(self, transaction_id: int) -> Optional[Transaction]:
         """Get a transaction by ID.
@@ -305,6 +499,7 @@ class Budget:
         end_date: Optional[str] = None,
         min_amount: Optional[float] = None,
         max_amount: Optional[float] = None,
+        direction: Optional[str] = None,
     ) -> List[Transaction]:
         """Search transactions with filters.
 
@@ -316,6 +511,7 @@ class Budget:
             end_date: End date filter
             min_amount: Minimum amount
             max_amount: Maximum amount
+            direction: Filter by direction
 
         Returns:
             List of matching transactions
@@ -340,6 +536,8 @@ class Budget:
                 q = q.filter(Transaction.amount >= min_amount)
             if max_amount is not None:
                 q = q.filter(Transaction.amount <= max_amount)
+            if direction:
+                q = q.filter(Transaction.direction == direction)
 
             return q.order_by(desc(Transaction.timestamp), desc(Transaction.id)).all()
 
@@ -536,8 +734,10 @@ class Budget:
                 )
 
             # Calculate spending
-            txn_query = session.query(Transaction).filter(
-                Transaction.timestamp >= start_date
+            txn_query = (
+                session.query(Transaction)
+                .filter(Transaction.timestamp >= start_date)
+                .filter(Transaction.direction == "expense")
             )
             if category:
                 txn_query = txn_query.filter(Transaction.category == category)
@@ -559,14 +759,16 @@ class Budget:
             }
 
     # Report operations
-    def get_daily_spending(self, days: int = 30) -> List[Tuple[str, float]]:
-        """Get daily spending for the last N days.
+    def get_daily_cashflow(
+        self, days: int = 30
+    ) -> List[Tuple[str, float, float, float]]:
+        """Get daily cashflow for the last N days.
 
         Args:
             days: Number of days to include
 
         Returns:
-            List of (date, total_spent) tuples
+            List of (date, income, expenses, net) tuples
         """
         with self.Session() as session:
             start_date = datetime.now() - timedelta(days=days)
@@ -577,23 +779,38 @@ class Budget:
             )
 
             # Group by date
+            # {date: {"income": 0.0, "expenses": 0.0}}
             daily = {}
+
             for txn in txns:
                 date_str = txn.timestamp.strftime("%Y-%m-%d")
-                daily[date_str] = daily.get(date_str, 0.0) + txn.amount
+                if date_str not in daily:
+                    daily[date_str] = {"income": 0.0, "expenses": 0.0}
 
-            # Return sorted list
-            return sorted(daily.items())
+                if txn.direction == "income":
+                    daily[date_str]["income"] += txn.amount
+                else:
+                    daily[date_str]["expenses"] += txn.amount
 
-    def get_spending_by_category(self, year: int, month: int) -> Dict[str, float]:
-        """Get spending breakdown by category for a month.
+            # Convert to list and calculate net
+            result = []
+            for date_str, data in sorted(daily.items()):
+                net = data["income"] - data["expenses"]
+                result.append((date_str, data["income"], data["expenses"], net))
+
+            return result
+
+    def get_spending_by_category(
+        self, year: int, month: int
+    ) -> Dict[str, Dict[str, float]]:
+        """Get income and expense breakdown by category for a month.
 
         Args:
             year: Year
             month: Month (1-12)
 
         Returns:
-            Dict mapping category to total spent
+            Dict: {"income": {cat: amount}, "expenses": {cat: amount}}
         """
         with self.Session() as session:
             start_date = datetime(year, month, 1)
@@ -611,10 +828,74 @@ class Budget:
                 .all()
             )
 
-            # Group by category
-            by_category = {}
+            result = {"income": {}, "expenses": {}}
+
             for txn in txns:
                 cat = txn.category or "Uncategorized"
-                by_category[cat] = by_category.get(cat, 0.0) + txn.amount
+                direction = txn.direction if txn.direction in ["income", "expense"] else "expense"
+                
+                # key is "income" or "expenses" (plural for output format consistency if desired, 
+                # but user spec said "income" and "expenses")
+                # checking spec: {"income": {cat: amount}, "expenses": {cat: amount}}
+                key = "income" if direction == "income" else "expenses"
+                
+                result[key][cat] = result[key].get(cat, 0.0) + txn.amount
 
-            return by_category
+            return result
+
+    def get_income_total(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> float:
+        """Get total income for date range."""
+        with self.Session() as session:
+            q = session.query(Transaction).filter(Transaction.direction == "income")
+            if start_date:
+                q = q.filter(Transaction.timestamp >= start_date)
+            if end_date:
+                q = q.filter(Transaction.timestamp <= end_date)
+            
+            return sum(txn.amount for txn in q.all())
+
+    def get_expense_total(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> float:
+        """Get total expenses for date range."""
+        with self.Session() as session:
+            q = session.query(Transaction).filter(Transaction.direction == "expense")
+            if start_date:
+                q = q.filter(Transaction.timestamp >= start_date)
+            if end_date:
+                q = q.filter(Transaction.timestamp <= end_date)
+            
+            return sum(txn.amount for txn in q.all())
+
+    def get_net_total(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> Dict[str, float]:
+        """Get income, expenses, and net for date range.
+
+        Returns:
+            {"income": float, "expenses": float, "net": float}
+        """
+        income = self.get_income_total(start_date, end_date)
+        expenses = self.get_expense_total(start_date, end_date)
+        return {
+            "income": income,
+            "expenses": expenses,
+            "net": income - expenses
+        }
+
+    def get_income_by_category(self, year: int, month: int) -> Dict[str, float]:
+        """Get income breakdown by category for a month."""
+        # Reuse get_spending_by_category logic or just alias it? 
+        # The user requested a separate method. 
+        # But get_spending_by_category now returns both.
+        # So we can just extract the income part.
+        result = self.get_spending_by_category(year, month)
+        return result["income"]

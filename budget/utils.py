@@ -11,6 +11,7 @@ def generate_transaction_hash(
     amount: float,
     description: str,
     card: Optional[str] = None,
+    direction: str = "expense",
 ) -> str:
     """Generate a unique hash for transaction deduplication.
 
@@ -19,6 +20,7 @@ def generate_transaction_hash(
         amount: Transaction amount
         description: Transaction description
         card: Optional card name
+        direction: Transaction direction ("income" or "expense")
 
     Returns:
         SHA256 hash string
@@ -28,9 +30,10 @@ def generate_transaction_hash(
     amount_str = f"{float(amount):.2f}"  # Normalize to 2 decimal places
     desc_normalized = description.lower().strip()
     card_normalized = card.lower().strip() if card else ""
+    direction_normalized = direction.lower().strip()
 
-    # Create hash input
-    hash_input = f"{date_str}|{amount_str}|{desc_normalized}|{card_normalized}"
+    # Create hash input - include direction to distinguish income from expenses
+    hash_input = f"{date_str}|{amount_str}|{desc_normalized}|{card_normalized}|{direction_normalized}"
 
     # Generate SHA256 hash
     return hashlib.sha256(hash_input.encode()).hexdigest()
